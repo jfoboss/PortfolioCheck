@@ -42,7 +42,7 @@
 Нужен Mac (Apple Silicon или Intel), macOS 13+ и Python 3.12.
 
 ```bash
-git clone https://github.com/<you>/portfolio-check.git
+git clone https://github.com/jfoboss/PortfolioCheck.git
 cd portfolio-check
 ./bootstrap_mac.sh        # поставит Python 3.12 через Homebrew (если нужно), создаст .venv, зависимости
 ./build_mac.sh            # соберёт dist/PortfolioCheck.app и образ .dmg

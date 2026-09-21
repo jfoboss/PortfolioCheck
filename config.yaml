@@ -1,0 +1,40 @@
+# Конфигурация PortfolioCheck — шаблон для нового пользователя.
+# При первом запуске откроется мастер настройки: он заполнит коридоры и правила по выбранному шаблону.
+# Потом всё правится в Настройках; руками этот файл редактировать не обязательно.
+# Рабочая копия лежит в ~/Library/Application Support/PortfolioCheck/ (или в iCloud Drive, если выбрано).
+
+account:
+  id: ""                 # пусто — первый брокерский счёт; иначе id из «Настройки → Доступ»
+
+# Целевые коридоры по классам, % от стоимости портфеля (заполнит мастер).
+# Классы: gold | real_estate (весь блок ЗПИФ) | real_estate_wh | real_estate_other | equity_core | equity_spec
+targets: {}
+
+# Классификация по тикеру (для ЗПИФ и облигаций — ISIN). Новые бумаги классифицируются автоматически,
+# спекулятивную ячейку (equity_spec) и балласт (ballast) программа сама не отличит — поправь в Настройки → Инструменты.
+# Классы: gold | real_estate_wh | real_estate_other | equity_core | equity_spec | ballast | foreign | cash
+instruments: {}
+auto_classify: true
+
+# Курсы на случай, если API не отдал курс валюты.
+fx_fallback:
+  USD: 90.0
+  EUR: 100.0
+  HKD: 11.5
+  CNY: 12.5
+
+rules:
+  drawdown_alert_pct: 10                 # кандидат на добор — просадка от средней больше, %
+  buy_candidates_classes: [equity_core, real_estate_wh, real_estate_other]
+  frozen: {}                             # тикер: "причина" — правило добора их не предлагает
+  position_caps: {}                      # тикер: лимит в ₽
+  single_name_max_pct: 11                # максимум на одного эмитента, %
+  tail_threshold_rub: 30000              # мелкие «хвосты» балласта
+
+screener:
+  blacklist: {}                          # тикер: "причина" — не предлагать в «Идеях»
+  blacklist_customized: true
+
+refresh:
+  on_launch: true
+  interval_min: 60

@@ -196,6 +196,45 @@ class ModelsWorker(QThread):
             self.failed.emit(f"{type(e).__name__}: {str(e)[:150]}")
 
 
+class AutoHeightLabel(QLabel):
+    """Многострочная подпись, высота которой всегда соответствует текущей ширине и тексту
+    (в форме Qt иначе запоминает высоту, посчитанную при минимальной ширине)."""
+
+    def __init__(self, text: str = "", gray: bool = True):
+        super().__init__(text)
+        self.setWordWrap(True); self.setTextFormat(Qt.RichText)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        if gray:
+            self.setStyleSheet("color: gray")
+
+    def _fit(self) -> None:
+        if not self.text():
+            self.setFixedHeight(0); return
+        h = self.heightForWidth(max(self.width(), 200))
+        if h > 0 and h != self.height():
+            self.setFixedHeight(h)
+
+    def setText(self, t: str) -> None:
+        super().setText(t); self._fit()
+
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e); self._fit()
+
+
+class TierWorker(QThread):
+    done = Signal(object)
+
+    def __init__(self, key: str, proxy: str):
+        super().__init__(); self.key, self.proxy = key, proxy
+
+    def run(self) -> None:
+        import ai as AI
+        try:
+            self.done.emit(AI.openrouter_key_info(self.key, self.proxy))
+        except Exception:  # noqa: BLE001
+            self.done.emit({})
+
+
 class ModelPicker(QWidget):
     """Поле модели: для OpenRouter — выпадающий список с поиском по подстроке, фильтр бесплатных и ★ рекомендуемые;
     для остальных провайдеров — обычное поле ввода. Интерфейс как у QLineEdit: text / setText / textChanged."""
@@ -216,14 +255,14 @@ class ModelPicker(QWidget):
         self.combo.activated.connect(self._picked)
         row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0)
         self.cb_free = QCheckBox("только бесплатные"); self.cb_free.setChecked(True)
+        self.form = None                 # строки каталога живут в форме настроек отдельными строками
         self.cb_free.toggled.connect(self._fill)
         self.b_reload = QPushButton("Обновить список"); self.b_reload.setToolTip("Загрузить свежий каталог моделей OpenRouter")
         self.lbl = QLabel(); self.lbl.setStyleSheet("color: gray")
         row.addWidget(self.cb_free); row.addWidget(self.b_reload); row.addWidget(self.lbl, 1)
         self.catalog_row = QWidget(); self.catalog_row.setLayout(row)
-        lay.addWidget(self.combo); lay.addWidget(self.catalog_row)
-        self.why = QLabel(); self.why.setWordWrap(True); self.why.setStyleSheet("color: gray")
-        lay.addWidget(self.why)
+        lay.addWidget(self.combo)
+        self.why = AutoHeightLabel()
         self.models: list[dict] = []
         self.set_catalog_mode(False)
 
@@ -252,6 +291,9 @@ class ModelPicker(QWidget):
 
     # — каталог —
     def set_catalog_mode(self, on: bool) -> None:
+        box = self.catalog_row.parentWidget()
+        if self.form is not None and box is not None:
+            self.form.setRowVisible(box, on)
         self.catalog_row.setVisible(on); self.why.setVisible(on)
         if not on:
             cur = self.combo.lineEdit().text()
@@ -259,7 +301,9 @@ class ModelPicker(QWidget):
             self.combo.lineEdit().setText(cur)
 
     def set_models(self, models: list[dict], note: str) -> None:
+        import ai as AI
         self.models = models; self.lbl.setText(note); self._fill()
+        self.setPlaceholderText(f"по умолчанию: {AI.default_model('openrouter')}")
 
     def _fill(self) -> None:
         import ai as AI
@@ -279,12 +323,22 @@ class ModelPicker(QWidget):
         self._show_why()
 
     def _show_why(self) -> None:
+        import ai as AI
         mid = self.text()
+        if not mid and self.models:
+            mid = AI.default_model("openrouter")
+            prefix = f"Поле пустое — будет использована <code>{mid}</code>. "
+        else:
+            prefix = ""
         m = next((x for x in self.models if x["id"] == mid), None)
         if m is None:
-            self.why.setText("" if not self.models or not mid else "Модели нет в каталоге — проверь id (или это модель другого провайдера).")
+            if not self.models or not mid:
+                self.why.setText(prefix); return
+            rec = next((x["id"] for x in self.models if x["free"] and x["recommended"]), "")
+            self.why.setText("<span style='color:#FF9F0A'>Этой модели сейчас нет в каталоге OpenRouter — бесплатные версии "
+                             "снимают без предупреждения.</span>" + (f" Например, подойдёт <code>{rec}</code> ★." if rec else ""))
             return
-        self.why.setText(("★ Рекомендуется: " if m["recommended"] else "") + (m["why"] or ""))
+        self.why.setText(prefix + ("★ Рекомендуется: " if m["recommended"] else "") + (m["why"] or ""))
 
 
 class SettingsDialog(QDialog):
@@ -829,7 +883,18 @@ class SettingsDialog(QDialog):
         self.sp_ai_interval = QDoubleSpinBox(); self.sp_ai_interval.setRange(0, 168); self.sp_ai_interval.setDecimals(1)
         self.sp_ai_interval.setSuffix(" ч"); self.sp_ai_interval.setValue(float(cfg.get("min_interval_h", 6)))
         self.sp_ai_interval.valueChanged.connect(self._touch)
-        form.addRow("Модель:", self.ai_model); form.addRow("Прокси:", self.ai_proxy); form.addRow("Endpoint:", self.ai_url)
+        from PySide6.QtWidgets import QSizePolicy
+        self.lbl_ai_tier = AutoHeightLabel()
+        for wdg in (self.ai_model, self.ai_model.combo, self.ai_model.catalog_row):
+            wdg.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        form.addRow("Модель:", self.ai_model)
+        # каталог, пояснение и лимиты — в одном блоке: так многострочный текст корректно считает высоту
+        self.ai_catalog_box = QWidget(); cb_lay = QVBoxLayout(self.ai_catalog_box)
+        cb_lay.setContentsMargins(0, 0, 0, 0); cb_lay.setSpacing(4)
+        cb_lay.addWidget(self.ai_model.catalog_row); cb_lay.addWidget(self.ai_model.why); cb_lay.addWidget(self.lbl_ai_tier)
+        form.addRow("", self.ai_catalog_box)
+        self.ai_model.form = form; self._ai_form = form
+        form.addRow("Прокси:", self.ai_proxy); form.addRow("Endpoint:", self.ai_url)
         form.addRow(self.cb_ai_auto)
         form.addRow("Не пересчитывать чаще, чем раз в:", self.sp_ai_interval)
         form.addRow(_note("Ответы кэшируются: при тех же новостях/данных запрос не уходит вообще, а при изменившихся — не чаще "
@@ -838,6 +903,7 @@ class SettingsDialog(QDialog):
         row = QHBoxLayout()
         self.lbl_ai_key = QLabel()
         b_set, b_del, b_test = QPushButton("Задать ключ…"), QPushButton("Удалить"), QPushButton("Проверить")
+        b_test.setToolTip("Отправляет один короткий запрос — он тоже считается в лимите бесплатных моделей")
         b_set.clicked.connect(self._ai_set_key); b_del.clicked.connect(self._ai_del_key); b_test.clicked.connect(self._ai_test)
         row.addWidget(self.lbl_ai_key, 1); row.addWidget(b_set); row.addWidget(b_del); row.addWidget(b_test)
         lay.addLayout(row)
@@ -854,12 +920,43 @@ class SettingsDialog(QDialog):
         import ai as AI
         p = self.ai_provider_key()
         self.lbl_ai_howto.setText("<b>Как подключить</b><br>" + AI.HOWTO[p])
-        self.ai_model.setPlaceholderText(f"по умолчанию: {AI.PROVIDERS[p]['model']}" if AI.PROVIDERS[p]["model"] else "обязательно: id модели у провайдера")
+        dm = AI.default_model(p)
+        self.ai_model.setPlaceholderText(f"по умолчанию: {dm}" if dm else "обязательно: id модели у провайдера")
         self.ai_url.setPlaceholderText(AI.PROVIDERS[p]["url"] or "обязательно: https://host/v1/chat/completions")
+        self.ai_model.form = self.ai_model.form or getattr(self, "_ai_form", None)
         self.ai_model.set_catalog_mode(p == "openrouter")
+        if hasattr(self, "lbl_ai_tier") and p == "openrouter":
+            self._ai_tier_info()
         if p == "openrouter" and not self.ai_model.models:
             self._load_models(force=False)
         self._ai_refresh_key_label(); self._touch()
+
+    def _ai_tier_info(self) -> None:
+        """Сколько бесплатных запросов в сутки доступно этому ключу: зависит от того, покупались ли кредиты."""
+        import ai as AI
+        key = SEC.get(self.AI_SERVICE, "openrouter")
+        base = ("Лимит бесплатных (:free) моделей — общий на аккаунт: 20 запросов в минуту и 50 в сутки, а после покупки "
+                "кредитов от $10 — 1000 в сутки. Одно обновление приложения тратит 2 запроса (новости + все экраны сразу), "
+                "кнопка «Проверить» — ещё 1.")
+        block = ""
+        if AI.RATE_BLOCK_UNTIL and AI.RATE_BLOCK_UNTIL > __import__("datetime").datetime.now():
+            block = (f"<br><span style='color:#FF453A'>Дневной лимит исчерпан, запросы к :free-моделям не отправляются "
+                     f"до {AI.RATE_BLOCK_UNTIL:%H:%M}.</span>")
+        self.lbl_ai_tier.setText(base + block)
+        if not key:
+            return
+
+        def show(info: dict) -> None:
+            tier = ""
+            if info.get("free_tier") is True:
+                tier = " <b>Этот ключ — без покупки кредитов: 50 бесплатных запросов в сутки.</b>"
+            elif info.get("free_tier") is False:
+                tier = " <b>На аккаунте покупались кредиты: до 1000 бесплатных запросов в сутки.</b>"
+            self.lbl_ai_tier.setText(base + tier + block)
+        if getattr(self, "_tier_worker", None) is not None and self._tier_worker.isRunning():
+            return
+        self._tier_worker = TierWorker(key, self.ai_proxy.text().strip())
+        self._tier_worker.done.connect(show); self._tier_worker.start()
 
     def _load_models(self, force: bool) -> None:
         """Каталог OpenRouter — в фоне; из кэша (сутки) мгновенно."""
@@ -1077,9 +1174,10 @@ class SettingsDialog(QDialog):
         return it.text().strip() if it else ""
 
     def closeEvent(self, event) -> None:
-        wk = getattr(self, "_models_worker", None)
-        if wk is not None and wk.isRunning():
-            wk.wait(3000)              # каталог моделей — короткий запрос, дожидаемся, чтобы не убить живой поток
+        for name in ("_models_worker", "_tier_worker"):
+            wk = getattr(self, name, None)
+            if wk is not None and wk.isRunning():
+                wk.wait(3000)              # каталог моделей — короткий запрос, дожидаемся, чтобы не убить живой поток
         # На закрытие — дописать то, что ещё не ушло по таймеру
         if self._timer.isActive():
             self._timer.stop()

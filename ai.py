@@ -39,10 +39,9 @@ PROVIDERS = {
 HOWTO = {
     "openrouter": ("1. <a href='https://openrouter.ai/keys'>openrouter.ai/keys</a> → Create Key — ключ за минуту, без верификации; "
                    "пополнение картой или крипто-кошельком, есть бесплатные модели с суффиксом <code>:free</code>.<br>"
-                   "2. Модель по умолчанию — бесплатная <code>deepseek/deepseek-v4-flash-0731:free</code>: деньги с баланса не списываются, но есть "
-                   "ограничения по частоте запросов, а бесплатные модели OpenRouter иногда убирает. Если понадобится другая — "
-                   "любой id со страницы <a href='https://openrouter.ai/models?max_price=0'>openrouter.ai/models</a> (фильтр бесплатных) "
-                   "или платная, например <code>qwen/qwen3-235b-a22b</code>.<br>"
+                   "2. Модель выбирается из списка выше (★ — рекомендуемые). Если поле пустое — берётся первая рекомендуемая "
+                   "бесплатная из текущего каталога. У бесплатных моделей общий лимит на аккаунт: 50 запросов в сутки, а после "
+                   "покупки кредитов от $10 — 1000; платные модели этого лимита не имеют, сводка стоит доли цента.<br>"
                    "3. Endpoint менять не нужно. Прокси — только если openrouter.ai не открывается напрямую."),
     "openai_compat": ("Любой шлюз с OpenAI-совместимым API (Fireworks, Together, DeepInfra, Groq, ModelScope, свой vLLM/LM Studio):<br>"
                       "1. Впиши полный адрес в поле Endpoint, вида <code>https://host/v1/chat/completions</code> "
@@ -115,8 +114,46 @@ def _openai_headers(provider: str, key: str) -> dict:
     return h
 
 
+CATALOG_DIR: Path | None = None     # задаёт приложение: где лежит кэш каталога OpenRouter
+
+
+def _cached_catalog() -> list[dict]:
+    if CATALOG_DIR is None:
+        return []
+    f = CATALOG_DIR / "openrouter_models.json"
+    try:
+        return parse_openrouter_models(json.loads(f.read_text(encoding="utf-8"))["data"]) if f.exists() else []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def default_model(provider: str) -> str:
+    """Модель по умолчанию. Для OpenRouter — первая рекомендуемая бесплатная из каталога: бесплатные версии
+    снимают без предупреждения, и зашитый в код id со временем перестаёт существовать."""
+    if provider == "openrouter":
+        cat = _cached_catalog()
+        rec = [m["id"] for m in cat if m["free"] and m["recommended"]]
+        if rec:
+            return rec[0]
+        if cat and PROVIDERS["openrouter"]["model"] not in {m["id"] for m in cat}:
+            free = [m["id"] for m in cat if m["free"]]
+            if free:
+                return free[0]
+    return PROVIDERS[provider]["model"]
+
+
+def _fallbacks(model: str, n: int = 2) -> list[str]:
+    """Запасные бесплатные модели: если провайдер основной перегружен, OpenRouter сам уйдёт на следующую."""
+    if not model.endswith(":free"):
+        return []
+    return [m["id"] for m in _cached_catalog() if m["free"] and m["recommended"] and m["id"] != model][:n]
+
+
 def _chat(provider: str, key: str, model: str, system: str, user: str, proxy: str, base_url: str, max_tokens: int = 1200) -> str:
-    cfg = PROVIDERS[provider]; model = model or cfg["model"]; url = base_url or cfg["url"]
+    cfg = PROVIDERS[provider]; model = model or default_model(provider); url = base_url or cfg["url"]
+    if provider == "openrouter" and model.endswith(":free") and RATE_BLOCK_UNTIL and datetime.now() < RATE_BLOCK_UNTIL:
+        raise RateLimited(f"дневной лимит бесплатных моделей OpenRouter исчерпан, запросы не отправляются до "
+                          f"{RATE_BLOCK_UNTIL:%H:%M %d.%m}. Показаны ответы из кэша.", "daily", RATE_BLOCK_UNTIL)
     if not url:
         raise ValueError("не задан Endpoint (Настройки → ИИ)")
     if not model:
@@ -128,9 +165,13 @@ def _chat(provider: str, key: str, model: str, system: str, user: str, proxy: st
                       "messages": [{"role": "user", "content": user}]}, proxy)
         return "".join(b.get("text", "") for b in resp.get("content", []))
     if kind == "openai":
-        resp = _post(url, _openai_headers(provider, key),
-                     {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                      "temperature": 0.2}, proxy)
+        body = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "temperature": 0.2}
+        if provider == "openrouter":
+            fb = _fallbacks(model)
+            if fb:
+                body["models"] = [model] + fb        # маршрутизация OpenRouter: при сбое провайдера — следующая модель
+        resp = _post(url, _openai_headers(provider, key), body, proxy)
         return resp["choices"][0]["message"]["content"]
     resp = _post(url, {}, {"model": model, "stream": False, "format": "json",
                            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}, "")
@@ -142,8 +183,37 @@ def exec_summary(kind: str, facts: str, provider: str, key: str, model: str, pro
     d = _extract_json(text)
     def lst(x):
         return [str(i) for i in (x or [])][:5]
-    return ExecSummary(kind, datetime.now().isoformat(timespec="minutes"), provider, model or PROVIDERS[provider]["model"],
+    return ExecSummary(kind, datetime.now().isoformat(timespec="minutes"), provider, model or default_model(provider),
                        str(d.get("headline", "")), lst(d.get("good")), lst(d.get("bad")), lst(d.get("watch")))
+
+
+EXEC_BATCH_SYSTEM = ("Ты личный аналитик инвестора. Ниже — данные по нескольким экранам его приложения, каждый в своём "
+                     "разделе ===ЭКРАН: ключ===. Для КАЖДОГО экрана дай краткий вывод в своей роли: overview — аналитик "
+                     "портфеля на сегодня; portfolio — риск-менеджер по структуре; market — рыночный аналитик (что двигает "
+                     "портфель, связь с новостями, шум против значимого); strategy — финансовый планировщик (идёт ли по плану, "
+                     "рискованные допущения). Отвечай строго одним JSON без пояснений вокруг: {\"ключ экрана\": "
+                     "{\"headline\": \"одна фраза\", \"good\": [\"до 5 пунктов\"], \"bad\": [...], \"watch\": [...]}, ...}. "
+                     "Оценивай относительно правил инвестора. Пиши по-русски, сухо, без советов купить/продать.")
+
+
+def exec_summary_batch(jobs: list[tuple[str, str]], provider: str, key: str, model: str, proxy: str = "",
+                       base_url: str = "") -> list[ExecSummary]:
+    """Сводки по нескольким экранам ОДНИМ запросом — у бесплатных моделей OpenRouter лимит считается в запросах."""
+    if len(jobs) == 1:
+        return [exec_summary(jobs[0][0], jobs[0][1], provider, key, model, proxy, base_url)]
+    user = "\n\n".join(f"===ЭКРАН: {kind}===\n{facts}" for kind, facts in jobs)
+    text = _chat(provider, key, model, EXEC_BATCH_SYSTEM, user, proxy, base_url, max_tokens=600 * len(jobs))
+    d = _extract_json(text)
+    def lst(x):
+        return [str(i) for i in (x or [])][:5]
+    at = datetime.now().isoformat(timespec="minutes"); m = model or default_model(provider)
+    out = []
+    for kind, _ in jobs:
+        part = d.get(kind) or {}
+        if part:
+            out.append(ExecSummary(kind, at, provider, m, str(part.get("headline", "")), lst(part.get("good")),
+                                   lst(part.get("bad")), lst(part.get("watch"))))
+    return out
 
 
 def save_exec(s: ExecSummary, cache_dir: Path) -> None:
@@ -204,6 +274,58 @@ class Summary:
         return Summary(**json.loads(s))
 
 
+class RateLimited(RuntimeError):
+    """429 с понятной причиной. kind: daily (дневной лимит аккаунта) | minute | upstream (перегружен провайдер) | other."""
+    def __init__(self, text: str, kind: str, reset: datetime | None = None):
+        super().__init__(text); self.kind = kind; self.reset = reset
+
+
+# После дневного лимита бесплатных моделей не отправляем запросы до сброса — иначе каждый вызов впустую жжёт время
+RATE_BLOCK_UNTIL: datetime | None = None
+
+
+def _describe_429(e, body: dict) -> RateLimited:
+    raw = ""
+    try:
+        raw = e.read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        pass
+    msg, meta, hdrs = "", {}, {}
+    try:
+        err = (json.loads(raw) or {}).get("error") or {}
+        msg = str(err.get("message", "")); meta = err.get("metadata") or {}
+        hdrs = meta.get("headers") or {}
+    except Exception:  # noqa: BLE001
+        msg = raw[:200]
+    for k in ("X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"):
+        if k not in hdrs and e.headers is not None and e.headers.get(k):
+            hdrs[k] = e.headers.get(k)
+    reset = None
+    try:
+        rv = float(hdrs.get("X-RateLimit-Reset", 0))
+        if rv > 0:
+            reset = datetime.fromtimestamp(rv / 1000 if rv > 1e11 else rv)
+    except Exception:  # noqa: BLE001
+        pass
+    model = str(body.get("model", ""))
+    low = msg.lower()
+    limit = str(hdrs.get("X-RateLimit-Limit", ""))
+    when = f" Сброс примерно в {reset:%H:%M %d.%m}." if reset else " Сброс — в начале следующих суток (UTC)."
+    if "per-day" in low or "rpd" in low or "per day" in low or limit in ("50", "1000"):
+        return RateLimited("исчерпан дневной лимит бесплатных моделей OpenRouter на аккаунт: 50 запросов в сутки "
+                           "(после покупки кредитов от $10 — 1000). Лимит общий для всех :free-моделей, смена модели "
+                           "не поможет." + when + " Ответы в кэше продолжают показываться.", "daily", reset)
+    if "per-min" in low or "per minute" in low or "rpm" in low or limit == "20":
+        return RateLimited("лимит 20 запросов в минуту для бесплатных моделей — подожди минуту.", "minute", reset)
+    prov = meta.get("provider_name") or meta.get("provider_code") or ""
+    if prov or "upstream" in low or "temporarily" in low:
+        return RateLimited(f"провайдер модели{(' ' + str(prov)) if prov else ''} перегружен (это не твой лимит) — "
+                           "повтори позже или выбери другую модель ★.", "upstream", reset)
+    return RateLimited(f"слишком много запросов{': ' + msg[:150] if msg else ''}"
+                       + (" — для бесплатной модели это обычно дневной лимит аккаунта" if model.endswith(":free") else ""),
+                       "other", reset)
+
+
 def _post(url: str, headers: dict, body: dict, proxy: str = "", timeout: int = 120) -> dict:
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", **headers}, method="POST")
@@ -215,16 +337,19 @@ def _post(url: str, headers: dict, body: dict, proxy: str = "", timeout: int = 1
         with opener.open(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
+        model = str(body.get("model", ""))
+        if e.code == 429:
+            rl = _describe_429(e, body)
+            if rl.kind == "daily":
+                global RATE_BLOCK_UNTIL
+                RATE_BLOCK_UNTIL = rl.reset or (datetime.now() + __import__("datetime").timedelta(hours=6))
+            raise rl from e
         detail = ""
         try:
             detail = e.read().decode("utf-8", "replace")[:300]
         except Exception:  # noqa: BLE001
             pass
-        model = str(body.get("model", ""))
-        if e.code == 429:
-            hint = ("лимит запросов бесплатной модели — подожди несколько минут или выбери другую модель в Настройки → ИИ"
-                    if model.endswith(":free") else "слишком много запросов — повтори позже")
-        elif e.code == 404:
+        if e.code == 404:
             hint = f"модель «{model}» не найдена — возможно, её убрали; выбери другую в Настройки → ИИ"
         elif e.code == 402:
             hint = "на балансе провайдера нет денег — пополни или выбери бесплатную модель (с суффиксом :free)"
@@ -268,12 +393,12 @@ def summarize(provider: str, key: str, model: str, news_items, positions, proxy:
         s = str(it.get("sentiment", "neutral")).lower()
         s = "positive" if s.startswith("pos") else ("negative" if s.startswith("neg") else "neutral")
         items.append({"ticker": str(it.get("ticker", "")), "sentiment": s, "note": str(it.get("note", ""))})
-    return Summary(datetime.now().isoformat(timespec="minutes"), provider, model or PROVIDERS[provider]["model"],
+    return Summary(datetime.now().isoformat(timespec="minutes"), provider, model or default_model(provider),
                    str(data.get("overall", "")), str(data.get("macro", "")), items, len(news_items))
 
 
 def ping(provider: str, key: str, model: str, proxy: str = "", base_url: str = "") -> str:
-    """Короткий запрос для кнопки «Проверить». Возвращает текст ответа модели."""
+    """Короткий запрос для кнопки «Проверить». Возвращает текст ответа модели. Тратит один запрос из лимита."""
     return _chat(provider, key, model, "Отвечай одним словом.", "Ответь одним словом: ОК", proxy, base_url, max_tokens=20)
 
 
@@ -491,3 +616,12 @@ def model_label(m: dict) -> str:
         price = "цена ?"
     ctx = f"{m['context'] // 1000}k" if m["context"] else "?"
     return f"{star}{m['name']} — {price}, {ctx}"
+
+
+def openrouter_key_info(key: str, proxy: str = "") -> dict:
+    """{'free_tier': bool|None, 'label': str} по GET /api/v1/auth/key. Ключ без покупки кредитов — 50 бесплатных запросов в сутки."""
+    handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy})] if proxy else []
+    req = urllib.request.Request("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {key}"})
+    with urllib.request.build_opener(*handlers).open(req, timeout=15) as r:
+        d = (json.loads(r.read().decode("utf-8")) or {}).get("data") or {}
+    return {"free_tier": d.get("is_free_tier"), "label": d.get("label", ""), "usage": d.get("usage")}

@@ -313,6 +313,8 @@ class AIWorker(QThread):
             s = AI.summarize(*self.args, candidates=self.candidates)
             cache.put("news", fp, __import__("dataclasses").asdict(s), subj)
             self.done.emit((s, ""))
+        except AI.RateLimited as e:
+            self.failed.emit(str(e))
         except Exception as e:  # noqa: BLE001
             self.failed.emit(f"{type(e).__name__}: {str(e)[:300]}")
 
@@ -329,20 +331,29 @@ class ExecWorker(QThread):
         self.cache_dir, self.min_interval_h, self.force = cache_dir, min_interval_h, force
 
     def run(self) -> None:
+        """Сначала всё, что есть в кэше; устаревшие экраны — ОДНИМ запросом (лимиты считаются в запросах)."""
         cache = AI.ResponseCache(self.cache_dir)
+        todo, fps = [], {}
         for kind, facts in self.jobs:
-            if self.isInterruptionRequested():
-                return
-            fp = AI.exec_fingerprint(kind, facts, self.provider, self.model)
+            fp = AI.exec_fingerprint(kind, facts, self.provider, self.model); fps[kind] = fp
             hit, why = cache.get(f"exec_{kind}", fp, self.min_interval_h, self.force)
             if hit:
-                self.one.emit((AI.ExecSummary(**hit), f"из кэша: {why}")); continue
+                self.one.emit((AI.ExecSummary(**hit), f"из кэша: {why}"))
+            else:
+                todo.append((kind, facts))
+        if todo and not self.isInterruptionRequested():
             try:
-                s = AI.exec_summary(kind, facts, self.provider, self.key, self.model, self.proxy, self.base_url)
-                cache.put(f"exec_{kind}", fp, __import__("dataclasses").asdict(s))
-                self.one.emit((s, ""))
+                got = AI.exec_summary_batch(todo, self.provider, self.key, self.model, self.proxy, self.base_url)
+                for s in got:
+                    cache.put(f"exec_{s.kind}", fps[s.kind], __import__("dataclasses").asdict(s))
+                    self.one.emit((s, ""))
+                missing = [k for k, _ in todo if k not in {s.kind for s in got}]
+                if missing:
+                    self.failed.emit("модель не вернула сводку для: " + ", ".join(missing))
+            except AI.RateLimited as e:
+                self.failed.emit(str(e))
             except Exception as e:  # noqa: BLE001
-                self.failed.emit(f"{kind}: {type(e).__name__}: {str(e)[:200]}")
+                self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
         self.done.emit()
 
 
@@ -406,6 +417,7 @@ class MainWindow(QMainWindow):
                 "(кнопка «+» или перетащить приложение из папки Программы) → включить. Затем «Проверить снова» "
                 "(или перезапустить приложение).",
                 "Открыть настройки доступа", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        AI.CATALOG_DIR = paths.data_dir() / "cache"   # модель по умолчанию для OpenRouter — из живого каталога
         self.restore_layout()                      # размер окна, положение разделителей, активный экран
         if self.needs_setup():
             QTimer.singleShot(400, lambda: self.run_wizard(first=True))

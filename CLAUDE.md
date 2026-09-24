@@ -14,8 +14,9 @@
 - Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`);
   статическая проверка: `.venv/bin/python -m pyflakes src tests build.py scripts` — должна быть пустой (CI падает)
 - Сборка: macOS — `./build_mac.sh` → `.app` и `.dmg`; Windows и Linux — `python build.py` (на своей ОС) → zip /
-  tar.gz. CI (`.github/workflows/ci.yml`): тесты на ubuntu/windows/macos, сборки всех трёх ОС и запуск собранной
-  программы в демо. Релиз (GitHub → Releases → Publish с тегом `vX.Y`) — `release.yml` прикладывает dmg, zip, tar.gz
+  tar.gz. CI (`.github/workflows/ci.yml`, экономит минуты): в PR — тесты на ubuntu/windows; на `main` и вручную
+  (Run workflow) — ещё macos, сборки трёх ОС и запуск собранной программы в демо. Трогаешь сборку или пути
+  ресурсов — запусти полный набор вручную на своей ветке. Релиз (GitHub → Releases → Publish с тегом `vX.Y`) — `release.yml` прикладывает dmg, zip, tar.gz
 - Различия ОС — только через `osutil.py` (платформа, подписи сочетаний клавиш, шрифт) и `paths.py` (папки);
   сочетания задавай как `Ctrl+…` (на macOS это ⌘), в подписях — `native_keys()`, не «⌘» руками
 - Перед каждым коммитом/push: `scripts/check_private.sh` — ищет личные данные в исходниках

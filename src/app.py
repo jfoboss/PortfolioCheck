@@ -283,7 +283,9 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.news_tbl = self._news_table(); self.news_tbl_small = self._news_table()
         self.lbl_news = note()
         self.tbl_ideas = self._table(["Компания", "Тикер", "Отрасль", "Мес.", "Новости", "Цена", "Кап., млрд", "Дивдоходность",
-                                      "Дивдох. 5 лет", "Дивиденды, ₽", "P/E", "Долг/EBITDA", "ROE", "Free float", "Экс-дивиденд"])
+                                      "Дивдох. 5 лет", "Дивиденды, ₽", "P/E", "Долг/EBITDA", "ROE", "Free float", "Прошл. отсечка"])
+        self.tbl_ideas.horizontalHeaderItem(14).setToolTip("Последняя прошедшая отсечка (T-Invest, фундаментал). "
+                                                           "Ближайшая выплата — на экране «Календарь».")
         self.tbl_ideas.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tbl_ideas.customContextMenuRequested.connect(self._ideas_menu)
         self.btn_blacklist = QPushButton("Исключить"); self.btn_blacklist.clicked.connect(self.blacklist_selected)
@@ -294,11 +296,14 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         # период тепловой карты
         self.heat_group = QButtonGroup(self)
         heat_row = QHBoxLayout(); heat_row.addWidget(QLabel("Период:"))
-        for key, label, _ in H.PERIODS + [("all", "Всё время", 0), ("div", "Дивиденды за 12 мес", 0)]:
-            rb = QRadioButton(label); rb.setProperty("period", key); self.heat_group.addButton(rb); heat_row.addWidget(rb)
+        tips = {"all": "Всё время владения", "div": "Дивиденды за 12 месяцев, % к стоимости"}
+        for key, label, _ in H.PERIODS + [("all", "Всё", 0), ("div", "Дивиденды", 0)]:    # коротко: карта — в половине окна
+            rb = QRadioButton(label); rb.setProperty("period", key); rb.setToolTip(tips.get(key, ""))
+            self.heat_group.addButton(rb); heat_row.addWidget(rb)
             if key == "day":
                 rb.setChecked(True)
-        self.cb_group_sectors = QCheckBox("группировать по отраслям"); self.cb_group_sectors.setChecked(True)
+        self.cb_group_sectors = QCheckBox("по отраслям"); self.cb_group_sectors.setChecked(True)
+        self.cb_group_sectors.setToolTip("Группировать плитки по отраслям")
         self.cb_group_sectors.toggled.connect(lambda _: self.render_heatmap())
         heat_row.addWidget(self.cb_group_sectors); heat_row.addStretch()
         self.heat_group.buttonClicked.connect(lambda _: self.render_heatmap())
@@ -417,8 +422,9 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         for sb in (self.sp_min_yield, self.sp_min_cap, self.sp_max_debt):
             sb.valueChanged.connect(lambda _: self.refilter_ideas())
         il.addLayout(irow); il.addWidget(self.tbl_ideas, 1); il.addWidget(self.lbl_ideas)
-        market = QSplitter(Qt.Vertical); market.setObjectName("market"); market.addWidget(heat_w); market.addWidget(news_w)
-        market.setStretchFactor(0, 3); market.setStretchFactor(1, 2)
+        # карта и новости — рядом, а не стопкой: стопка «досками» читалась плохо (просьба пользователя)
+        market = QSplitter(Qt.Horizontal); market.setObjectName("market_cols"); market.addWidget(heat_w); market.addWidget(news_w)
+        market.setStretchFactor(0, 1); market.setStretchFactor(1, 1); market.setSizes([1000, 1000])
         mk = QWidget(); mkl = QVBoxLayout(mk); mkl.setContentsMargins(8, 8, 8, 8)
         mkl.addWidget(self.exec_panels["market"]); mkl.addWidget(market, 1)
         self.tabs.addTab(mk, "Рынок")

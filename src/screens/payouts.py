@@ -32,7 +32,8 @@ class PayoutsMixin:
         self.tbl_payouts = self._table(["Бумага", "Тикер", "Посл. день покупки", "Отсечка", "Выплата", "На бумагу",
                                         "Кол-во", "Сумма, ₽", "Ст."])
         self.tbl_payouts.horizontalHeaderItem(2).setToolTip("Последний торговый день, когда покупка ещё даёт право на выплату")
-        self.tbl_cand_div = self._table(["Кандидат", "Тикер", "Экс-дивиденд", "Дней", "Дивдоходность", "Дивиденды, ₽"])
+        self.cand_payouts: dict[str, PO.Payout] = {}
+        self.tbl_cand_div = self._table(["Кандидат", "Тикер", "Посл. день покупки", "Дней", "На бумагу", "Дивдоходность", "Ст."])
         self.lbl_payouts_note = note("Суммы — после НДФЛ 13%. ✔ — объявлена; ≈ — ожидается: выплата прошлого года, сдвинутая на год, эмитент её "
                                        "ещё не объявил, сумма и дата могут измениться; ✓ — уже была. Последний день покупки — последний "
                                        "торговый день, когда покупка ещё даёт право на выплату.")
@@ -53,7 +54,8 @@ class PayoutsMixin:
         self.tbl_macro = self._table(["Событие ЦБ", "Дата", "Дней"])
         self.tbl_macro.setSortingEnabled(False)
         cbr_w = QWidget(); cbl = QVBoxLayout(cbr_w); cbl.setContentsMargins(0, 4, 0, 0)
-        cbl.addWidget(QLabel("<b>Ключевая ставка: календарь ЦБ — 6 месяцев</b>")); cbl.addWidget(self.tbl_macro, 1)
+        self.lbl_macro = QLabel("<b>Ключевая ставка: календарь ЦБ — 6 месяцев</b>"); self.lbl_macro.setWordWrap(True)
+        cbl.addWidget(self.lbl_macro); cbl.addWidget(self.tbl_macro, 1)
         # поток и календарь ЦБ — разделителем: таблица ЦБ больше не отнимает у графика высоту молча
         chart_w = QSplitter(Qt.Vertical); chart_w.setObjectName("payouts_right")
         chart_w.addWidget(scroll_wrap(flow_w)); chart_w.addWidget(cbr_w)
@@ -70,6 +72,7 @@ class PayoutsMixin:
     def load_payouts_from_disk(self) -> None:
         items, at = PO.load(paths.cache_dir())
         self.payouts, self._payouts_at = items, at
+        self.cand_payouts = PO.load_candidates(paths.cache_dir())
         self.render_payouts()
 
     def load_macro_calendar(self) -> None:
@@ -119,6 +122,11 @@ class PayoutsMixin:
                     + (f", ближайшая — {month30[0].ticker} {month30[0].record_date}" if month30 else "")
                     + (" · оранжевым — последний день покупки в ближайшие 2 недели" if any(r[1] for r in rows) else ""))
         ev = macro.upcoming(getattr(self, "macro_events", []), today)
+        cal_err = getattr(self, "_factors_errors", {}).get("calendar")
+        self.lbl_macro.setText("<b>Ключевая ставка: календарь ЦБ — 6 месяцев</b>" + (
+            "<br>" + SY.span(f"Сайт ЦБ не ответил ({cal_err[:90]}). Откройте cbr.ru в браузере: если и там не "
+                             "открывается — дело в сети (VPN, фильтр провайдера).", SY.WARN)
+            if cal_err and not ev else ""))
         meet = next((e for e in ev if e.kind == macro.MEETING), None)
         if meet:
             days = (date.fromisoformat(meet.date) - today).days
@@ -131,15 +139,18 @@ class PayoutsMixin:
 
         res = getattr(self, "_last_screen", None)
         ideas = getattr(res, "ideas", None) or []
+        # Ближайшая выплата кандидата — из GetDividends (догрузка кандидатов, cache/candidate_payouts.json).
+        # Регресс: раньше бралась ex_dividend_date фундаментала — это ПРОШЛАЯ отсечка, таблица была пустой.
         crow = []
         for i in ideas:
-            try:
-                d = date.fromisoformat(str(i.ex_div_date)[:10])
-            except ValueError:
+            x = getattr(self, "cand_payouts", {}).get(i.ticker)
+            if x is None:
                 continue
+            d = date.fromisoformat(x.last_buy_date or x.record_date)
             days = (d - today).days
             if 0 <= days <= 120:
-                crow.append((days, [i.name, i.ticker, d.isoformat(), str(days), f"{i.div_yield:.1f}%",
-                                    f"{i.div_per_share:,.2f}"]))
+                crow.append((days, [i.name, i.ticker, d.isoformat(), str(days), f"{x.per_share:,.2f}",
+                                    f"{i.div_yield:.1f}%", STATUS[x.status]]))
         crow.sort(key=lambda t: t[0])
         self._fill(self.tbl_cand_div, [(cells, None) for _, cells in crow])
+        icon_column(self.tbl_cand_div, 6, STATUS_LEGEND)

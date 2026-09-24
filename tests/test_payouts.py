@@ -56,3 +56,35 @@ def test_cache_roundtrip_and_broken_file(tmp_path):
     assert got == items and at
     (tmp_path / PO.CACHE_FILE).write_text("{битый", encoding="utf-8")
     assert PO.load(tmp_path) == ([], "")
+
+
+def test_candidate_next_payout_not_past_ex_date(tmp_path):
+    """Регресс: отсечки кандидатов брались из ex_dividend_date фундаментала — это ПРОШЛАЯ отсечка, и таблица
+    «Ближайшие отсечки у кандидатов» на настоящих данных была пустой. Теперь — ближайшая выплата из GetDividends:
+    объявленная, иначе ожидаемая по прошлому году; кэш — чтобы показать при старте."""
+    from datetime import date
+    today = date(2026, 9, 24)
+    paid = PO.Payout("MOEX", "Мосбиржа", "2026-05-10", "2026-05-08", "", 17.0, "RUB", 1, 17.0, "paid")
+    x = PO.next_payout([paid], today)
+    assert x.status == "expected" and x.record_date == "2027-05-10"
+    declared = PO.Payout("MOEX", "Мосбиржа", "2026-10-20", "2026-10-19", "", 9.0, "RUB", 1, 9.0, "declared")
+    assert PO.next_payout([paid, declared], today) is declared
+    assert PO.next_payout([], today) is None
+    PO.save_candidates({"MOEX": declared}, tmp_path)
+    assert PO.load_candidates(tmp_path) == {"MOEX": declared}
+    assert PO.load_candidates(tmp_path / "нет") == {}
+
+
+def test_enrich_worker_next_payout_from_get_dividends():
+    """Догрузка кандидатов: ответ GetDividends → ближайшая выплата на одну бумагу (после НДФЛ)."""
+    from datetime import datetime, timedelta
+    from workers import IdeasEnrichWorker
+    soon = datetime.now() + timedelta(days=20)
+    dv = NS(record_date=soon, last_buy_date=soon - timedelta(days=1), payment_date=None,
+            dividend_net=NS(units=10, nano=0))
+    client = NS(instruments=NS(get_dividends=lambda **kw: NS(dividends=[dv])))
+    idea = NS(ticker="MOEX", name="Мосбиржа", uid="u1")
+    x = IdeasEnrichWorker._next_payout(client, idea)
+    assert x.status == "declared" and x.record_date == soon.date().isoformat() and abs(x.per_share - 8.7) < 1e-9
+    broken = NS(instruments=NS(get_dividends=lambda **kw: (_ for _ in ()).throw(RuntimeError("нет"))))
+    assert IdeasEnrichWorker._next_payout(broken, idea) is None

@@ -10,13 +10,19 @@ python -m pytest -q
 - Qt в режиме `offscreen`, сеть запрещена фикстурой `no_network`, профиль (`HOME`, `USERPROFILE`, `APPDATA`,
   `XDG_DATA_HOME`) и `paths.data_dir()` подменены на временный каталог, системные хранилища секретов отключены
   (`tests/conftest.py`) — реальные данные и токены пользователя тесты не видят и не трогают.
-- CI гоняет тот же набор на ubuntu, windows и macos; различия ОС проверяет `tests/test_platform.py`.
+- CI гоняет тот же набор: в PR — на ubuntu и windows, на `main` — ещё и на macos; различия ОС проверяет
+  `tests/test_platform.py`.
 - Статическая проверка — `python -m pyflakes src tests build.py scripts` (в CI на ubuntu): неопределённые имена
   (ошибка, которая иначе всплывёт только при клике в редкий пункт), лишние импорты и переменные.
-- Что проверяет CI на каждый push и PR: pyflakes, весь набор тестов на трёх ОС, `check_private.sh`, сборки macOS /
-  Windows / Linux и запуск собранной программы с `--demo`. Чтобы PR нельзя было смёржить с красным CI, в GitHub
-  включите защиту ветки `main`: Settings → Rules → Rulesets (или Branches) → «Require status checks to pass» и
-  выберите проверки `tests (…)`, `build-…`.
+- Что проверяет CI (минуты Actions экономим: macOS считается ×10, Windows ×2):
+  - **PR**: pyflakes, весь набор тестов на ubuntu и windows, `check_private.sh` — несколько минут;
+  - **push в `main`**: то же + тесты на macos + сборки macOS / Windows / Linux и запуск собранной программы с `--demo`;
+  - **вручную** (Actions → CI → Run workflow, любая ветка): полный набор — перед рискованным мержем (сборка,
+    `build_mac.sh`, пути ресурсов);
+  - правки только `*.md`, `docs/`, LICENSE CI не запускают; push в рабочие ветки без PR — тоже.
+  Чтобы PR нельзя было смёржить с красным CI, в GitHub включите защиту ветки `main`: Settings → Rules → Rulesets
+  (или Branches) → «Require status checks to pass» и выберите **`tests (ubuntu-latest)` и `tests (windows-latest)`**.
+  Проверки macOS и `build-…` в PR не идут — не делайте их обязательными, иначе PR будет вечно ждать.
 - Сеть в тесте — только подменой `urllib.request.build_opener` / функций модуля (примеры — `tests/test_ai.py`).
 - Модальные окна подменяй (`SetupWizard.exec`), иначе тест зависнет.
 - Демо-портфель — фикстура `demo_positions` (`demo_snapshot.json`), стратегия — `demo_cfg`.

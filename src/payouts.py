@@ -133,6 +133,29 @@ def load(cache_dir: Path) -> tuple[list[Payout], str]:
         return [], ""
 
 
+CAND_FILE = "candidate_payouts.json"
+
+
+def next_payout(items: list[Payout], today: date | None = None) -> Payout | None:
+    """Ближайшая будущая выплата по одной бумаге: объявленная, а если её нет — ожидаемая по прошлому году."""
+    today = today or date.today()
+    ahead = [x for x in with_expected(items, today) if x.status != "paid" and date.fromisoformat(x.record_date) >= today]
+    return min(ahead, key=lambda x: x.record_date) if ahead else None
+
+
+def save_candidates(by_ticker: dict[str, Payout], cache_dir: Path) -> None:
+    """Ближайшие выплаты кандидатов скринера (GetDividends) — чтобы «Календарь» показывал их при старте сразу."""
+    JC.write(cache_dir / CAND_FILE, {"at": datetime.now().isoformat(timespec="seconds"),
+                                     "items": {t: asdict(x) for t, x in by_ticker.items()}})
+
+
+def load_candidates(cache_dir: Path) -> dict[str, Payout]:
+    try:
+        return {t: Payout(**r) for t, r in ((JC.read(cache_dir / CAND_FILE) or {}).get("items") or {}).items()}
+    except TypeError:
+        return {}
+
+
 MONTHS = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
 
 

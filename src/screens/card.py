@@ -134,7 +134,7 @@ class SecurityCard(QDialog):
                      f"Капитализация {idea.cap_bln:,.0f} млрд ₽ · дивдоходность {idea.div_yield:.1f}% "
                      f"(средняя за 5 лет {f(idea.avg5y_div_yield, '{:.1f}%')}) · дивиденды {idea.div_per_share:,.2f} ₽",
                      f"<br>P/E {f(idea.pe)} · долг/EBITDA {f(idea.net_debt_ebitda)} · ROE {f(idea.roe, '{:.1f}%')} · "
-                     f"free float {f(idea.free_float, '{:.0f}%')} · экс-дивиденд {idea.ex_div_date or '—'}"]
+                     f"free float {f(idea.free_float, '{:.0f}%')} · прошлая отсечка {idea.ex_div_date or '—'}"]
         pc_ = d["peers"]
         if pc_:
             fmtv = lambda v, f: "—" if v is None else f.format(v)

@@ -3,7 +3,8 @@ factors.py — рыночные факторы для сценариев (BACKLO
 
   IMOEX  — MOEX ISS, история индекса: /iss/history/engines/stock/markets/index/securities/IMOEX.json (без токена;
            эндпоинт истории индекса работает, в отличие от убранного /securities/{t}/dividends);
-  USDRUB — официальный курс ЦБ: /scripts/XML_dynamic.asp (без токена).
+  USDRUB — биржевой курс доллара из T-Invest (свечи USD000UTSTOM, тот же канал, что портфель); запасной — официальный
+           курс ЦБ /scripts/XML_dynamic.asp. У части пользователей cbr.ru не отвечает (обрыв TLS по таймауту).
 Ряды кэшируются как свечи — cache/candles_IMOEX.json, cache/candles_USDRUB.json — и догружаются не чаще раза в сутки.
 Сеть — только из воркера (FactorsWorker). Сайты — через net.fetch (корни ОС).
 """
@@ -21,6 +22,7 @@ ISS_URL = ("https://iss.moex.com/iss/history/engines/stock/markets/index/securit
            "?from={frm}&till={till}&start={start}&iss.meta=off&history.columns=TRADEDATE,CLOSE")
 CBR_URL = "https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1={frm}&date_req2={till}&VAL_NM_RQ=R01235"
 MAX_AGE_S = 20 * 3600
+USD_FIGI = "BBG0013HGFT4"            # USD000UTSTOM — доллар/рубль «завтра» (тот же, что в portfolio_check.fetch_fx)
 
 
 def parse_iss(payload: bytes) -> list[tuple[str, float]]:
@@ -54,7 +56,7 @@ def fresh(cache_dir: Path, key: str) -> bool:
     return JC.fresh(cache_dir / f"candles_{key}.json", MAX_AGE_S)
 
 
-def fetch_all(cache_dir: Path, days: int = 400, fetch=None, today: date | None = None) -> dict[str, str]:
+def fetch_all(cache_dir: Path, days: int = 400, fetch=None, today: date | None = None, usd_series=None) -> dict[str, str]:
     """Догрузить оба ряда (если кэш старше суток). fetch(url) → bytes; по умолчанию net.fetch (корни ОС).
     Возвращает {ключ: "ok" | текст ошибки} — ошибка одного ряда не мешает другому."""
     if fetch is None:
@@ -78,7 +80,15 @@ def fetch_all(cache_dir: Path, days: int = 400, fetch=None, today: date | None =
             status[IMOEX] = "ok" if rows else "пустой ответ"
         except Exception as e:  # noqa: BLE001
             status[IMOEX] = SY.err_text(e, 120)
-    if not fresh(cache_dir, USDRUB):
+    if not fresh(cache_dir, USDRUB) and usd_series is not None:
+        try:                                             # T-Invest: работает везде, где работает портфель
+            rows = [(d, float(c)) for d, c in usd_series() if c]
+            if len(rows) >= 30:
+                H.save_series(cache_dir, USDRUB, rows)
+                status[USDRUB] = "ok"
+        except Exception as e:  # noqa: BLE001
+            status["USDRUB_tinvest"] = SY.err_text(e, 120)
+    if not fresh(cache_dir, USDRUB):                     # запасной — сайт ЦБ
         try:
             rows = parse_cbr(fetch(CBR_URL.format(frm=f"{frm:%d/%m/%Y}", till=f"{today:%d/%m/%Y}")))
             if rows:

@@ -35,7 +35,7 @@ def test_ideas_enrichment_runs_once_and_survives_reload(window):
     mk = lambda: [S.Idea("LKOH", "ЛУКОЙЛ", "Нефть и газ", 5248, 3636, 12.9, 676, 5, -0.3, 18, 55, "", 11.0, None, "u1")]
     r1 = S.ScreenResult(mk(), 255, 253, 253, 122, False, datetime.now().isoformat()); r1.all_ideas = r1.ideas
     window._last_screen = r1; window._on_ideas(r1)
-    window._on_ideas_enriched({"LKOH": 25.4})
+    window._on_ideas_enriched({"month": {"LKOH": 25.4}})
     r2 = S.ScreenResult(mk(), 255, 253, 253, 122, True, datetime.now().isoformat()); r2.all_ideas = r2.ideas
     window._last_screen = r2; window._on_ideas(r2)
     assert calls == [["LKOH"]]

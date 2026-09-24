@@ -46,7 +46,117 @@ def setup(base: Path | None = None) -> Path:
     cfg[CM.KEY] = CM.CURRENT_VERSION
     path = d / "config.yaml"
     pc.save_config(cfg, str(path))
+    fill_caches(d, positions)
     return path
+
+
+# ---------------------------------------------------------------------------
+# Демо-кэши: всё вымышленное и детерминированное (одинаковые скриншоты при каждом запуске)
+# ---------------------------------------------------------------------------
+
+# годовой дрейф цены по классам, % — чтобы переоценка и CAGR выглядели правдоподобно, а не случайно
+DRIFT = {"gold": 14, "equity_core": 9, "real_estate_wh": 6, "real_estate_other": 3, "equity_spec": 18,
+         "ballast": -6, "cash": 4}
+VOL = {"gold": 0.009, "cash": 0.006, "real_estate_wh": 0.004, "real_estate_other": 0.005}
+
+NEWS = [  # (часов назад, тикеры, заголовок) — выдуманные формулировки, не пересказ реальных событий
+    (1, ["SBERP"], "набсовет банка рекомендовал дивиденды за год, отсечка — через шесть недель"),
+    (3, [], "ЦБ сохранил ключевую ставку и смягчил риторику по инфляции"),
+    (5, ["LKOH"], "нефтяная компания отчиталась о росте свободного денежного потока"),
+    (8, ["MTSS"], "оператор связи увеличил долговую нагрузку ради инвестпрограммы"),
+    (11, ["PHOR"], "производитель удобрений нарастил экспорт на новые рынки"),
+    (14, ["TRNFP"], "тарифы на прокачку нефти проиндексируют с нового года"),
+    (20, ["MOEX"], "объём торгов на бирже вырос на фоне притока частных инвесторов"),
+    (26, [], "инфляционные ожидания населения снизились второй месяц подряд"),
+    (31, ["RU000A0DEMO1"], "складской фонд подписал договор аренды нового комплекса"),
+    (39, ["YDEX"], "технологическая компания представила обновлённого ИИ-ассистента"),
+    (47, ["GLDRUB_TOM"], "цена золота обновила максимум на фоне спроса центробанков"),
+    (55, ["AFLT"], "авиаперевозчик снизил прогноз пассажиропотока"),
+    (62, ["LKOH", "TRNFP"], "экспорт нефти через порты вернулся к прошлогодним уровням"),
+    (70, [], "курс доллара стабилизировался после налогового периода"),
+]
+
+# кандидаты скринера: тикер, название, отрасль, цена, кап. млрд, дивдох. %, P/E, долг/EBITDA, ROE, FF, средняя 5 лет, мес. %
+IDEAS = [
+    ("DEMA", "Демо-Энергосбыт", "Электроэнергетика", 3.9, 120, 13.8, 4.1, 0.2, 21, 30, 10.5, 2.4),
+    ("DEMB", "Демо-Сети Урала", "Электроэнергетика", 0.64, 56, 12.1, 3.6, 0.8, 16, 20, 9.8, 1.1),
+    ("DEMC", "Демо-Нефтегаз", "Нефть и газ", 612, 1450, 11.7, 5.2, 0.6, 18, 25, 10.9, -1.8),
+    ("DEMD", "Демо-Уголь", "Сырьё и материалы", 88, 95, 16.4, 3.1, 2.7, 24, 18, 12.2, -6.3),
+    ("DEME", "Демо-Телеком", "Телекоммуникации", 71, 210, 10.2, 7.8, 1.9, 29, 35, 8.9, 0.4),
+    ("DEMF", "Демо-Банк Регион", "Финансы", 1.2, 68, 14.9, 3.4, None, 22, 22, 11.4, 3.9),
+    ("DEMG", "Демо-Порт", "Промышленность", 9.8, 190, 9.1, 6.3, 1.2, 17, 20, 8.1, -0.7),
+    ("DEMH", "Демо-Ритейл", "Потребительский сектор", 3350, 330, 8.8, 9.5, 1.4, 38, 30, 7.4, 5.6),
+    ("DEMI", "Демо-Металлы", "Сырьё и материалы", 1540, 2350, 8.4, 8.9, 3.4, 26, 33, 9.0, -3.1),
+    ("DEMJ", "Демо-Генерация", "Электроэнергетика", 0.021, 150, 9.6, 5.5, 0.4, 9, 15, 6.2, 1.7),
+]
+
+
+def _candles(ticker: str, cls: str, last: float, years: int = 5) -> list[tuple[str, float]]:
+    """Дневные закрытия по рабочим дням: случайное блуждание с дрейфом класса, последнее значение = цена в снапшоте."""
+    import math
+    import random
+    from datetime import date, timedelta
+    rnd = random.Random(ticker)                    # детерминированно: один и тот же ряд при каждом запуске
+    drift = DRIFT.get(cls, 8) / 100 / 252
+    vol = VOL.get(cls, 0.016)
+    days, cur = [], date.today() - timedelta(days=365 * years)
+    while cur <= date.today():
+        if cur.weekday() < 5:
+            days.append(cur)
+        cur += timedelta(days=1)
+    x, xs = 0.0, []
+    for _ in days:
+        x += drift + rnd.gauss(0, vol)
+        xs.append(x)
+    k = math.log(last) - xs[-1]
+    return [(d.isoformat(), round(math.exp(v + k), 4)) for d, v in zip(days, xs)]
+
+
+def fill_caches(d: Path, positions) -> None:
+    """Свечи позиций, новости, кэш скринера и помесячные снапшоты — экраны демо не пустые и без сети."""
+    import json
+    from dataclasses import asdict
+    from datetime import date, timedelta
+    import news as NEWS_MOD
+    import screener as SCR
+
+    cache = d / "cache"
+    series = {}
+    for p in positions:
+        if p.figi:
+            series[p.figi] = _candles(p.ticker, p.cls, float(p.cur_price))
+            (cache / f"candles_{p.figi}.json").write_text(json.dumps(series[p.figi]), encoding="utf-8")
+
+    now = datetime.now()
+    items = [NEWS_MOD.NewsItem(title, f"https://example.com/demo/{i}", "демо", now - timedelta(hours=h), tickers)
+             for i, (h, tickers, title) in enumerate(NEWS)]
+    NEWS_MOD.save_cache(items, cache)
+
+    ideas = []
+    for n, (t, name, sector, price, cap, dy, pe, debt, roe, ff, avg5, mon) in enumerate(IDEAS):
+        ex = (date.today() + timedelta(days=9 + 11 * n)).isoformat()
+        ideas.append(SCR.Idea(t, name, sector, price, cap, dy, round(price * dy / 100, 4), pe, debt, roe, ff, ex,
+                              avg5, None, f"demo-{t}", mon))
+    (cache / "screener.json").write_text(json.dumps({
+        "at": now.isoformat(), "source": "tinvest2", "ideas": [asdict(i) for i in ideas],
+        "stats": {"universe": 250, "checked": len(ideas), "with_cap": len(ideas), "errors": 0}}, ensure_ascii=False),
+        encoding="utf-8")
+
+    # история стоимости: снапшот на первое число последних 12 месяцев — текущий состав по ценам тех дней,
+    # масштабированный под пополнения (раньше позиций было меньше)
+    rows = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    for m in range(12, 0, -1):
+        day = (date.today().replace(day=1) - timedelta(days=30 * (m - 1))).replace(day=1)
+        scale = 1 - 0.035 * m                        # ≈ пополнения 3,5% капитала в месяц
+        snap = []
+        for r in rows:
+            s = series.get(r.get("figi", ""))
+            price = next((c for dd, c in reversed(s) if dd <= day.isoformat()), float(r["cur_price"])) if s else float(r["cur_price"])
+            snap.append({**r, "value_rub": str(round(float(r["quantity"]) * scale * price, 2))})
+        f = d / "snapshots" / f"{day:%Y-%m-%d}.json"
+        if f.exists():                               # 1-е число сегодня — текущий снапшот не перезаписываем
+            continue
+        f.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
 
 
 def cleanup() -> None:

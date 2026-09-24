@@ -416,7 +416,8 @@ class MainWindow(QMainWindow):
                 "<b>Системные настройки → Конфиденциальность и безопасность → Полный доступ к диску</b> → добавить PortfolioCheck "
                 "(кнопка «+» или перетащить приложение из папки Программы) → включить. Затем «Проверить снова» "
                 "(или перезапустить приложение).",
-                "Открыть настройки доступа", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+                "Открыть настройки доступа", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+                retry=True)
         AI.CATALOG_DIR = paths.data_dir() / "cache"   # модель по умолчанию для OpenRouter — из живого каталога
         AI.load_rate_block()                           # дневной лимит, пойманный до перезапуска, ещё действует
         self.restore_layout()                      # размер окна, положение разделителей, активный экран
@@ -689,9 +690,11 @@ class MainWindow(QMainWindow):
         cl_.addWidget(self.banner); cl_.addWidget(self.tabs, 1)
         self.setCentralWidget(central)
 
-    def show_banner(self, html: str, button: str = "", url: str = "") -> None:
+    def show_banner(self, html: str, button: str = "", url: str = "", retry: bool = False) -> None:
+        """retry — кнопка «Проверить снова» (повторная проверка доступа к iCloud); нужна только баннеру про iCloud."""
         self.banner_text.setText(html)
         self.banner_btn.setText(button); self.banner_btn.setVisible(bool(button)); self._banner_url = url
+        self.banner_retry.setVisible(retry)
         self.banner.show()
 
     def _banner_action(self) -> None:

@@ -65,3 +65,11 @@ def test_settings_model_picker_returns_clean_id(window, isolated_home):
     mp.setText("vendor/other"); mp._emit()
     assert mp.text() == "vendor/other"
     window.settings_win.close()
+
+
+def test_banner_retry_only_for_icloud(window):
+    """Регресс: кнопка «Проверить снова» (доступ к iCloud) висела на любом баннере — например, «нет токена»."""
+    window.show_banner("нет токена", "Открыть Настройки → Доступ")
+    assert window.banner_retry.isHidden()
+    window.show_banner("нет доступа к iCloud", "Открыть", "x", retry=True)
+    assert not window.banner_retry.isHidden()

@@ -50,3 +50,36 @@ def test_card_shows_cached_consensus(window, demo_positions, isolated_home):
     html = window._cards["SBERP"].info.toPlainText()
     assert "Консенсус аналитиков — справочно" in html and "330.00" in html and "не рекомендация программы" in html
     window._cards["SBERP"].close()
+
+
+def test_request_passes_request_object(monkeypatch):
+    """Регресс: get_forecast_by(instrument_id=uid) → TypeError «unexpected keyword argument 'instrument_id'»:
+    метод SDK принимает только объект GetForecastRequest (сигнатура — как в tinkoff/invest/services.py)."""
+    import sys
+    from dataclasses import dataclass
+
+    @dataclass
+    class GetForecastRequest:
+        instrument_id: str = ""
+
+    schemas = NS(GetForecastRequest=GetForecastRequest)
+    monkeypatch.setitem(sys.modules, "tinkoff", NS(invest=NS(schemas=schemas)))
+    monkeypatch.setitem(sys.modules, "tinkoff.invest", NS(schemas=schemas))
+    monkeypatch.setitem(sys.modules, "tinkoff.invest.schemas", schemas)
+    seen = []
+
+    class Instruments:
+        def get_forecast_by(self, request):                   # как в SDK: без **kwargs
+            seen.append(request)
+            return NS(consensus=None, targets=[])
+
+    CS.request(NS(instruments=Instruments()), "uid-1")
+    assert seen == [GetForecastRequest(instrument_id="uid-1")]
+
+
+def test_parse_empty_consensus_item_from_sdk():
+    """Регресс: без консенсуса SDK отдаёт не None, а ConsensusItem с нулями — карточка показала бы цель 0.00."""
+    empty = NS(recommendation=NS(name="RECOMMENDATION_UNSPECIFIED"), current_price=Q(0), consensus=Q(0),
+               min_target=Q(0), max_target=Q(0), price_change_rel=Q(0), currency="")
+    assert CS.parse(NS(consensus=empty, targets=[])) is None
+    assert CS._rec(NS(name="RECOMMENDATION_UNSPECIFIED")) == "" and CS._rec(0) == ""

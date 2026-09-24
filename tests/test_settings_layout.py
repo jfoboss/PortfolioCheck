@@ -52,3 +52,23 @@ def test_feeds_check_runs_in_background(window, qapp, monkeypatch):
     qapp.processEvents()
     assert d.t_feeds.item(0, 1).text().startswith("✓") and d.t_feeds.item(1, 1).text() == "✗ доступ запрещён (403)"
     d.close()
+
+
+def test_ai_page_labels_do_not_push_fields_right(window, qapp):
+    """Регресс: на странице «ИИ» подпись «Не пересчитывать чаще, чем раз в:» задавала ширину колонки подписей —
+    на macOS (подписи прижаты вправо) все поля съезжали вправо, слева оставалось пустое поле в треть окна.
+    Статус каталога моделей справа от кнопки переносился в узкую колонку и обрезался по высоте."""
+    from PySide6.QtGui import QFontMetrics
+    from PySide6.QtWidgets import QFormLayout
+    window.settings_win = None
+    window.open_settings(); d = window.settings_win
+    i = [d.tabs.tabText(k) for k in range(d.tabs.count())].index("ИИ")
+    page = d.tabs.widget(i).widget()
+    limit = 15 * QFontMetrics(d.font()).averageCharWidth()           # «Endpoint:» с запасом
+    for form in page.findChildren(QFormLayout):
+        for r in range(form.rowCount()):
+            it = form.itemAt(r, QFormLayout.LabelRole)
+            if it and it.widget():
+                assert it.widget().sizeHint().width() <= limit, it.widget().text()
+    assert d.ai_model.lbl.parentWidget() is not d.ai_model.catalog_row       # статус каталога — своей строкой
+    d.close()

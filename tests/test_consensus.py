@@ -83,3 +83,13 @@ def test_parse_empty_consensus_item_from_sdk():
                min_target=Q(0), max_target=Q(0), price_change_rel=Q(0), currency="")
     assert CS.parse(NS(consensus=empty, targets=[])) is None
     assert CS._rec(NS(name="RECOMMENDATION_UNSPECIFIED")) == "" and CS._rec(0) == ""
+
+
+def test_parse_target_without_date_from_sdk():
+    """Регресс: у прогноза дома без даты SDK отдаёт не None, а 1970-01-01 — карточка показала бы эту дату."""
+    from datetime import timezone
+    resp = NS(consensus=NS(recommendation=1, current_price=Q(100.0), consensus=Q(120.0), min_target=Q(90.0),
+                           max_target=Q(150.0), price_change_rel=Q(20.0), currency="rub"),
+              targets=[NS(company="Дом В", recommendation=2, target_price=Q(110.0),
+                          recommendation_date=datetime(1970, 1, 1, tzinfo=timezone.utc))])
+    assert CS.parse(resp)["targets"][0]["date"] == ""

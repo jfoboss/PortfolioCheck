@@ -40,6 +40,11 @@ def _rec(v) -> str:
         return str(key)
 
 
+def _date(d) -> str:
+    """Дата рекомендации → YYYY-MM-DD. Незаполненную SDK отдаёт не None, а 1970-01-01 — это «даты нет»."""
+    return d.strftime("%Y-%m-%d") if hasattr(d, "strftime") and d.year > 1970 else ""
+
+
 def parse(resp) -> dict | None:
     """Ответ GetForecastBy → {consensus: {...}, targets: [...]}; None, если консенсуса нет."""
     c = getattr(resp, "consensus", None)
@@ -57,7 +62,7 @@ def parse(resp) -> dict | None:
         targets.append({"company": getattr(t, "company", "") or getattr(t, "show_name", ""),
                         "recommendation": _rec(getattr(t, "recommendation", "")),
                         "target": _money(getattr(t, "target_price", None)),
-                        "date": d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else ""})
+                        "date": _date(d)})
     return {"consensus": cons, "targets": targets}
 
 

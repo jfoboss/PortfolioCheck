@@ -610,6 +610,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
 
     def load_from_disk(self) -> None:
         """Всё, что есть на диске: снапшот портфеля, кэш свечей → heatmap, новости, ИИ-сводки, календарь выплат."""
+        self.load_macro_calendar()
         self.load_payouts_from_disk()
         f = self._latest_snapshot()
         if f is None:

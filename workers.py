@@ -235,7 +235,8 @@ class LoadWorker(QThread):
 
 
 class FactorsWorker(QThread):
-    """Индекс Мосбиржи (MOEX ISS) и курс доллара (ЦБ) для сценариев — без токена, не чаще раза в сутки."""
+    """Индекс Мосбиржи (MOEX ISS) и курс доллара (ЦБ) для сценариев — без токена, не чаще раза в сутки;
+    заодно календарь решений ЦБ по ставке (не чаще раза в неделю)."""
     done = Signal(object)
 
     def __init__(self, cache_dir: Path):
@@ -244,8 +245,11 @@ class FactorsWorker(QThread):
 
     def run(self) -> None:
         import factors as FA
+        import macro
         try:
-            self.done.emit(FA.fetch_all(self.cache_dir))
+            status = FA.fetch_all(self.cache_dir)
+            status["calendar"] = macro.fetch_calendar(self.cache_dir)
+            self.done.emit(status)
         except Exception as e:  # noqa: BLE001
             self.done.emit({"ошибка": f"{type(e).__name__}: {e}"})
 

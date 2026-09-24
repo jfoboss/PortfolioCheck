@@ -30,7 +30,7 @@ app.py  ── каркас главного окна: сборка UI, меню
   attribution.py      ── откуда изменение стоимости: переоценка / покупки нетто между снапшотами
   payouts.py          ── календарь выплат: прошлые/объявленные из GetDividends, «ожидается» по прошлому году, поток
   ai.py               ── провайдеры LLM, сводки, кэш ответов, каталог OpenRouter, разбор 429
-  macro.py            ── инфляция и ставка с сайта ЦБ РФ
+  macro.py            ── инфляция и ставка с сайта ЦБ РФ; календарь решений по ставке (cache/macro_calendar.json)
   paths.py            ── где лежат данные (локально / iCloud Drive), миграция; папка по ОС (macOS / Windows / Linux)
   osutil.py           ── различия ОС: платформа, подписи сочетаний клавиш, моноширинный шрифт, имя хранилища секретов
   config_migrate.py   ── config_version и явные миграции формата конфига
@@ -75,6 +75,7 @@ Windows `%APPDATA%\PortfolioCheck\`, Linux `$XDG_DATA_HOME/PortfolioCheck/` (о�
 | `cache/news.json` | лента | `news.save_cache` |
 | `cache/alerts_state.json` | какие условия оповещений выполнены сейчас (чтобы не повторять) | `alerts.new_hits` |
 | `cache/candles_IMOEX.json`, `cache/candles_USDRUB.json` | ряды факторов для сценариев (раз в сутки) | `factors.fetch_all` |
+| `cache/macro_calendar.json` | календарь ЦБ по ключевой ставке (раз в неделю, вместе с факторами) | `macro.fetch_calendar` |
 | `cache/payouts.json` | выплаты для календаря (прошлые, объявленные, ожидаемые) | `payouts.save` |
 | `cache/screener.json` | результат скринера (`source: tinvest2`) | `screener.screen` |
 | `cache/ai_responses.json` | кэш ответов ИИ с отпечатками | `ai.ResponseCache` |

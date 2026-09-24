@@ -29,7 +29,8 @@ class AlertsMixin:
             return []
         res = getattr(self, "_last_screen", None)
         hits = AL.evaluate(rules, self.positions, getattr(res, "all_ideas", None) or getattr(res, "ideas", None) or [],
-                           getattr(self, "payouts", []), self._class_status(), getattr(self, "news_items", []))
+                           getattr(self, "payouts", []), self._class_status(), getattr(self, "news_items", []),
+                           macro_events=getattr(self, "macro_events", []))
         fresh = AL.new_hits(hits, paths.data_dir() / "cache")
         self._alert_log = (getattr(self, "_alert_log", []) + [h.text for h in fresh])[-50:]
         if fresh:

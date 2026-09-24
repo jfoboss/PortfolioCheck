@@ -59,13 +59,14 @@ from screens.card import CardMixin
 from screens.attribution import AttributionMixin
 from screens.palette import PaletteMixin
 from screens.exporting import ExportMixin
+from screens.risk_panel import RiskMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, ExportMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, ExportMixin, RiskMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -376,7 +377,10 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         b_split.addWidget(b_charts); b_split.setStretchFactor(0, 3); b_split.setStretchFactor(1, 2)
         bl.addWidget(b_split, 1)
         self.pos_split = QSplitter(Qt.Vertical); self.pos_split.setObjectName("portfolio")
-        self.pos_split.addWidget(pos_top); self.pos_split.addWidget(blocked_w)
+        self.pos_bottom = QTabWidget(); self.pos_bottom.setDocumentMode(True)
+        self.pos_bottom.addTab(self._build_risk_panel(), "Риск")
+        self.pos_bottom.addTab(blocked_w, "Заблокированные бумаги")
+        self.pos_split.addWidget(pos_top); self.pos_split.addWidget(self.pos_bottom)
         self.pos_split.setStretchFactor(0, 3); self.pos_split.setStretchFactor(1, 2)
         pf = QWidget(); pfl = QVBoxLayout(pf); pfl.setContentsMargins(8, 8, 8, 8)
         pfl.addWidget(self.exec_panels["portfolio"]); pfl.addWidget(self.pos_split, 1)

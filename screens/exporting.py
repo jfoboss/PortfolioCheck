@@ -10,7 +10,7 @@ class ExportMixin:
     """Экспорт в CSV (BACKLOG п. 24): контекстное меню таблиц и «Файл → Экспорт истории стоимости». Модель — export.py."""
 
     EXPORT_TABLES = {"tbl_classes": "доли классов", "tbl_pos": "позиции", "tbl_blocked": "заблокированные",
-                     "tbl_payouts": "календарь выплат", "tbl_cand_div": "отсечки кандидатов", "tbl_ideas": "идеи"}
+                     "tbl_payouts": "календарь выплат", "tbl_risk": "риск", "tbl_cand_div": "отсечки кандидатов", "tbl_ideas": "идеи"}
 
     def _install_export_menus(self) -> None:
         from PySide6.QtWidgets import QMenu

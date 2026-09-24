@@ -5,17 +5,6 @@ from decimal import Decimal
 import pytest
 
 
-@pytest.fixture
-def window(qapp, monkeypatch):
-    import app as A
-    import wizard as W
-    monkeypatch.setattr(W.SetupWizard, "exec", lambda self: 0)          # мастер модальный — в тестах не ждём
-    A.ensure_config(A.paths.data_dir() / "config.yaml")
-    w = A.MainWindow(str(A.paths.data_dir() / "config.yaml"))
-    yield w
-    w.close()
-
-
 def test_new_user_gets_wizard_existing_does_not(qapp, monkeypatch):
     import app as A
     import wizard as W

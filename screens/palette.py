@@ -154,3 +154,4 @@ class PaletteMixin:
             self.news_filter.setCurrentIndex(idx)
         else:
             self.set_status(f"По {ticker} новостей в ленте нет — показана вся лента")
+

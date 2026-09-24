@@ -111,6 +111,7 @@ class IdeasMixin:
         if t:
             m.addAction(f"Карточка {t}", lambda: self.open_card(t))
         m.addAction("Исключить из идей (в чёрный список)…", self.blacklist_selected)
+        m.addSeparator(); m.addAction("Экспорт таблицы в CSV…", lambda: self.export_table(self.tbl_ideas, "идеи"))
         m.exec(self.tbl_ideas.viewport().mapToGlobal(pos))
 
     def refilter_ideas(self) -> None:

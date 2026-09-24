@@ -58,13 +58,14 @@ from screens.payouts import PayoutsMixin
 from screens.card import CardMixin
 from screens.attribution import AttributionMixin
 from screens.palette import PaletteMixin
+from screens.exporting import ExportMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, ExportMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -165,6 +166,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         act_wizard = QAction("Мастер настройки…", self); act_wizard.triggered.connect(lambda: self.run_wizard(first=False))
         m_file.addAction(act_wizard); m_file.addSeparator()
         m_file.addAction(act_open); m_file.addAction(act_save)
+        act_exp = QAction("Экспорт истории стоимости (CSV)…", self); act_exp.triggered.connect(lambda: self.export_history())
+        m_file.addAction(act_exp)
         m_file.addSeparator(); m_file.addAction(self.act_prefs)
         m_file.addSeparator(); m_file.addAction(act_quit)
 
@@ -439,6 +442,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
 
         self._build_screen_actions()
         self._connect_cards()
+        self._install_export_menus()
 
         central = QWidget(); cl_ = QVBoxLayout(central); cl_.setContentsMargins(0, 0, 0, 0); cl_.setSpacing(0)
         cl_.addWidget(self.banner); cl_.addWidget(self.tabs, 1)

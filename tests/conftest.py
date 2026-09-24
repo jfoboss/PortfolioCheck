@@ -63,3 +63,14 @@ def demo_positions():
 def demo_cfg():
     import strategy as ST
     return ST.apply_preset({"instruments": {}}, "dividend_defensive")
+
+
+@pytest.fixture
+def window(qapp, monkeypatch):
+    import app as A
+    import wizard as W
+    monkeypatch.setattr(W.SetupWizard, "exec", lambda self: 0)          # мастер модальный — в тестах не ждём
+    A.ensure_config(A.paths.data_dir() / "config.yaml")
+    w = A.MainWindow(str(A.paths.data_dir() / "config.yaml"))
+    yield w
+    w.close()

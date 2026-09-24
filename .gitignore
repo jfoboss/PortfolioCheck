@@ -1,0 +1,27 @@
+# окружение и сборка
+.venv/
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+icon.iconset/
+PortfolioCheck.icns
+
+# личные данные — никогда не коммитить
+ca-bundle.pem
+token
+secret_*
+snapshots/
+cache/
+*.log
+strategy*.yaml
+portfolio-strategy.yaml
+config.local.yaml
+
+# macOS
+.DS_Store
+
+# личные инструкции агенту
+CLAUDE.local.md
+.pytest_cache/

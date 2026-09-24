@@ -129,6 +129,17 @@ Python 3.12, PySide6 (Qt), [tinkoff-investments](https://github.com/RussianInves
 - История стоимости до первого запуска восстанавливается приближённо: сегодняшний состав по ценам прошлых дней.
 - Тональность новостей и сводки — оценка заголовков моделью, а не анализ отчётности.
 
+## Разработка
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest          # тесты: offscreen, без сети, на демо-данных
+scripts/check_private.sh             # перед push: нет ли личных данных в исходниках
+```
+
+Документация для разработчика и агента (Claude Code): `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`,
+`docs/LESSONS.md`, `docs/BACKLOG.md`, `docs/TESTING.md`, правила по областям кода — `.claude/rules/`.
+
 ## Лицензия
 
 MIT — см. [LICENSE](LICENSE).

@@ -183,3 +183,31 @@ def test_guest_mode_and_switch_to_real_profile(qapp, monkeypatch, isolated_home)
     (isolated_home / "data" / "snapshots").mkdir(parents=True, exist_ok=True)
     (isolated_home / "data" / "snapshots" / "2026-01-01.json").write_text("[]", encoding="utf-8")
     assert not A.should_start_as_guest()                     # свои данные есть — демо не нужно
+
+
+def test_command_palette(window, demo_positions):
+    """Палитра ⌘K: тикер → карточка первой строкой, «ТИКЕР новости» → лента по бумаге, разделы настроек."""
+    from PySide6.QtGui import QKeySequence
+    from news import NewsItem
+    from screens.palette import entries, rank
+    window.on_loaded((demo_positions, None, None, []))
+    window.news_items = [NewsItem("Сбербанк отчитался", "", "s", None, ["SBERP"])]
+    window._fill_news_filter()
+    items = entries(window)
+    top = rank(items, "sberp", window)
+    assert top[0].ticker == "SBERP" and top[0].kind == "бумага"
+    assert rank(items, "сбер", window)[0].ticker == "SBERP"                  # по названию тоже
+    assert "LKOH" in [e.ticker for e in rank(items, "нефть", window)]         # и по отрасли
+    top[0].run()
+    assert window._cards["SBERP"].isVisible(); window._cards["SBERP"].close()
+    cmd = rank(items, "SBERP новости", window)
+    assert len(cmd) == 1 and "новости" in cmd[0].title
+    cmd[0].run()
+    assert window.tabs.tabText(window.tabs.currentIndex()) == "Рынок" and window.news_filter.currentData() == "SBERP"
+    st = rank(items, "настройки скринер", window)
+    assert st[0].title == "Настройки → Скринер"
+    st[0].run()
+    assert window.settings_win.tabs.tabText(window.settings_win.tabs.currentIndex()) == "Скринер"
+    window.settings_win.close()
+    assert rank(items, "идеи", window)[0].title == "Экран «Идеи»"
+    assert window.act_palette.shortcut() == QKeySequence("Ctrl+K")

@@ -57,13 +57,14 @@ from screens.overview import RenderMixin
 from screens.payouts import PayoutsMixin
 from screens.card import CardMixin
 from screens.attribution import AttributionMixin
+from screens.palette import PaletteMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -168,6 +169,10 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         m_file.addSeparator(); m_file.addAction(act_quit)
 
         m_view = self.menuBar().addMenu("Вид")
+        self.act_palette = QAction("Команды и поиск…", self); self.act_palette.setShortcut(QKeySequence("Ctrl+K"))
+        self.act_palette.setToolTip("Тикер → карточка, «SBERP новости», экраны, действия, разделы настроек")
+        self.act_palette.triggered.connect(self.open_palette)
+        m_view.addAction(self.act_palette); m_view.addSeparator()
         m_view.addAction(self.act_refresh)
         m_view.addSeparator(); m_view.addAction(self.act_privacy)
         act_exec = QAction("ИИ-сводки по экранам", self); act_exec.setShortcut(QKeySequence("Ctrl+Shift+I"))

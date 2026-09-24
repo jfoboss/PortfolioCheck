@@ -7,7 +7,8 @@
 
 - Окружение: `./bootstrap_mac.sh` (Python 3.12 через Homebrew, `.venv`, зависимости); для тестов ещё
   `.venv/bin/pip install -r requirements-dev.txt`
-- Запуск из исходников: `.venv/bin/python app.py`
+- Запуск из исходников: `.venv/bin/python app.py`; на вымышленном портфеле без токена и без записи в настоящий
+  профиль — `.venv/bin/python app.py --demo` (для скриншотов и осмотра UI)
 - Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`)
 - Сборка: `./build_mac.sh` → `dist/PortfolioCheck.app` и `.dmg` (только на macOS)
 - Перед каждым коммитом/push: `scripts/check_private.sh` — ищет личные данные в исходниках
@@ -58,7 +59,8 @@
 - Архитектура, модули, потоки данных, форматы кэша: `docs/ARCHITECTURE.md`
 - Почему сделано именно так (решения и отвергнутые варианты): `docs/DECISIONS.md`
 - История ошибок с причинами — читать перед правками в соответствующем модуле: `docs/LESSONS.md`
-- Что делать дальше: `docs/BACKLOG.md`
+- Что делать дальше: `docs/BACKLOG.md`; обсуждаемые крупные направления — `docs/CROSS_PLATFORM.md`,
+  `docs/TERMINAL_IDEAS.md`
 - Как тестировать, включая ручную проверку на macOS: `docs/TESTING.md`
 - Правила по областям кода подгружаются сами при работе с файлами: `.claude/rules/`
 

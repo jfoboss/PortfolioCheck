@@ -47,6 +47,7 @@ import strategy as ST
 from diagnostics import log
 import news as NEWS
 import screener as SCR
+import config_migrate as CM
 
 APP_NAME = "PortfolioCheck"
 # Полупрозрачные системно-нейтральные оттенки: читаются и на светлом, и на тёмном фоне
@@ -77,7 +78,7 @@ def ensure_config(path: Path) -> None:
     if default.exists():
         path.write_text(default.read_text(encoding="utf-8"), encoding="utf-8")
     else:
-        pc.save_config({"account": {"id": ""}, "targets": {}, "instruments": {}, "fx_fallback": {},
+        pc.save_config({CM.KEY: CM.CURRENT_VERSION, "account": {"id": ""}, "targets": {}, "instruments": {}, "fx_fallback": {},
                         "rules": {"drawdown_alert_pct": 10, "buy_candidates_classes": [], "frozen": {},
                                   "position_caps": {}, "single_name_max_pct": 11, "tail_threshold_rub": 30000}},
                        str(path))
@@ -381,12 +382,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config_path = config_path
         try:
-            self.cfg = pc.load_config(config_path)
+            self.cfg = CM.load_and_migrate(config_path)
         except Exception as e:  # noqa: BLE001
             log.error("конфиг %s не прочитан: %s — использую дефолтный", config_path, e)
             self.config_path = str(paths.LOCAL_DIR / "config.yaml")
             ensure_config(Path(self.config_path))
-            self.cfg = pc.load_config(self.config_path)
+            self.cfg = CM.load_and_migrate(self.config_path)
         self.positions: list[pc.Position] = []
         self.worker: LoadWorker | None = None
         self.settings_win: SettingsDialog | None = None
@@ -1420,9 +1421,7 @@ class MainWindow(QMainWindow):
     def _blacklist(self) -> dict:
         sc = self.cfg.get("screener") or {}
         bl = sc.get("blacklist") or {}
-        if isinstance(bl, list):
-            bl = {t: "" for t in bl}
-        return bl if sc.get("blacklist_customized") else {**SCR.DEFAULT_BLACKLIST, **bl}
+        return {t: "" for t in bl} if isinstance(bl, list) else dict(bl)   # дефолты не домешиваем — см. config_migrate
 
     def _screener_filters(self):
         sc = self.cfg.get("screener") or {}
@@ -1446,7 +1445,7 @@ class MainWindow(QMainWindow):
         bl = dict(self._blacklist())
         for t in tickers:
             bl[t] = reason.strip()
-        sc = self.cfg.setdefault("screener", {}); sc["blacklist"] = bl; sc["blacklist_customized"] = True
+        self.cfg.setdefault("screener", {})["blacklist"] = bl
         pc.save_config(self.cfg, self.config_path)
         if self.settings_win is not None:
             self.settings_win.close(); self.settings_win = None
@@ -1882,7 +1881,7 @@ class MainWindow(QMainWindow):
         """Настройки → Общие сменили папку данных: перечитать конфиг оттуда и перезапустить окно настроек."""
         self.config_path = str(new_dir / "config.yaml")
         ensure_config(Path(self.config_path))
-        self.cfg = pc.load_config(self.config_path)
+        self.cfg = CM.load_and_migrate(self.config_path)
         if self.settings_win is not None:
             self.settings_win.close(); self.settings_win = None
         if self.positions:

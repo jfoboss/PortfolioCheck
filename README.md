@@ -82,6 +82,8 @@ id счёта и личных сумм.
 
 - Настройки, снапшоты портфеля, кэш свечей и новостей — `~/Library/Application Support/PortfolioCheck/`
   или в iCloud Drive (переключается в Настройки → Общие), чтобы работать с двух Mac.
+- Формат настроек версионируется: после обновления программы старый `config.yaml` обновляется сам, а рядом
+  остаётся копия прежнего файла `config.yaml.v<N>.bak` — ничего из настроек при этом не теряется.
 - Токен и ключи ИИ — в Keychain. Если Keychain недоступен — в файле с правами только для владельца.
 - Лог и диагностика — вкладка «О программе» (кнопки «Проверить подключения» и «Скопировать диагностику»).
 
@@ -120,6 +122,7 @@ Python 3.12, PySide6 (Qt), [tinkoff-investments](https://github.com/RussianInves
 | `forecast.py` | прогноз и «Где я сейчас» |
 | `history.py`, `news.py`, `screener.py`, `macro.py`, `ai.py` | свечи, RSS, скринер, данные ЦБ, ИИ |
 | `settings_dialog.py`, `diagnostics.py`, `paths.py`, `secrets_store.py` | настройки, диагностика, хранилище, Keychain |
+| `config_migrate.py` | версия конфига и миграции между версиями |
 | `build_mac.sh`, `bootstrap_mac.sh` | сборка .app/.dmg и подготовка окружения |
 
 ## Ограничения
@@ -128,6 +131,17 @@ Python 3.12, PySide6 (Qt), [tinkoff-investments](https://github.com/RussianInves
 - Данные — T-Invest API; другие брокеры не поддерживаются.
 - История стоимости до первого запуска восстанавливается приближённо: сегодняшний состав по ценам прошлых дней.
 - Тональность новостей и сводки — оценка заголовков моделью, а не анализ отчётности.
+
+## Разработка
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest          # тесты: offscreen, без сети, на демо-данных
+scripts/check_private.sh             # перед push: нет ли личных данных в исходниках
+```
+
+Документация для разработчика и агента (Claude Code): `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`,
+`docs/LESSONS.md`, `docs/BACKLOG.md`, `docs/TESTING.md`, правила по областям кода — `.claude/rules/`.
 
 ## Лицензия
 

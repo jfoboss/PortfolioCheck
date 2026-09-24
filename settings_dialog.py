@@ -821,7 +821,6 @@ class SettingsDialog(QDialog):
     # ---- Скринер ------------------------------------------------------------
 
     def _tab_screener(self) -> QWidget:
-        from screener import DEFAULT_BLACKLIST
         w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(20, 16, 20, 16)
         sc = self.cfg.get("screener") or {}
         lay.addWidget(_note("Дополнительные критерии для «Идей» (0 — не фильтровать). Основные — дивдоходность, капитализация, "
@@ -846,7 +845,7 @@ class SettingsDialog(QDialog):
         bl = sc.get("blacklist")
         if isinstance(bl, list):                       # старый формат — список тикеров
             bl = {t: "" for t in bl}
-        bl = {**DEFAULT_BLACKLIST, **(bl or {})} if not sc.get("blacklist_customized") else (bl or {})
+        bl = bl or {}
         for t, reason in bl.items():
             r = self.t_black.rowCount(); self.t_black.insertRow(r)
             self.t_black.setItem(r, 0, _cell(t)); self.t_black.setItem(r, 1, _cell(reason))
@@ -1077,7 +1076,9 @@ class SettingsDialog(QDialog):
     # ---- Сборка конфига -----------------------------------------------------
 
     def collect(self) -> dict:
-        cfg: dict = {"account": {"id": self.ed_account.text().strip()},
+        import config_migrate as CM
+        cfg: dict = {CM.KEY: CM.CURRENT_VERSION,          # окно пишет актуальный формат; без версии миграция пошла бы снова
+                     "account": {"id": self.ed_account.text().strip()},
                      "auto_classify": self.cb_auto_cls.isChecked(),
                      "setup_done": bool(self.cfg.get("setup_done", True)),
                      "strategy_preset": self.cfg.get("strategy_preset", ""),
@@ -1153,7 +1154,7 @@ class SettingsDialog(QDialog):
             t = self._text(self.t_black, r, 0).upper()
             if t:
                 black[t] = self._text(self.t_black, r, 1)
-        cfg["screener"] = {"blacklist": black, "blacklist_customized": True,
+        cfg["screener"] = {"blacklist": black,
                            "min_avg5y_yield": self.sp_avg5.value(), "max_pe": self.sp_pe.value(), "min_free_float": self.sp_ff.value(),
                            "exclude_sectors": [x.strip() for x in self.ed_excl_sectors.text().split(",") if x.strip()],
                            "last_auto_run": (self.cfg.get("screener") or {}).get("last_auto_run", "")}

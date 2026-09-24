@@ -137,7 +137,8 @@ PERSONAL_FORECAST_KEYS = ("start_capital", "base_income", "plan_start", "plan_ca
 
 
 def export_strategy(cfg: dict, include_personal_numbers: bool = False) -> str:
-    out = {k: cfg[k] for k in STRATEGY_KEYS if k in cfg}
+    import config_migrate as CM
+    out = {CM.KEY: CM.CURRENT_VERSION, **{k: cfg[k] for k in STRATEGY_KEYS if k in cfg}}
     if not include_personal_numbers and "forecast" in out:
         out["forecast"] = {k: v for k, v in out["forecast"].items() if k not in PERSONAL_FORECAST_KEYS}
     if "screener" in out:
@@ -152,7 +153,7 @@ def validate_strategy(data) -> list[str]:
     errs = []
     if not isinstance(data, dict):
         return ["файл не похож на стратегию: ожидается набор разделов (targets, rules, instruments…)"]
-    unknown = [k for k in data if k not in STRATEGY_KEYS and k not in ("account",)]
+    unknown = [k for k in data if k not in STRATEGY_KEYS and k not in ("account", "config_version")]
     if unknown:
         errs.append("незнакомые разделы (будут пропущены): " + ", ".join(unknown))
     t = data.get("targets") or {}
@@ -210,6 +211,12 @@ def import_strategy(cfg: dict, text: str) -> tuple[dict, list[str], list[str]]:
             new[k] = data[k]; replaced.append(k)
     if "targets" in data:
         new["targets"] = {c: {"min": float(r["min"]), "max": float(r["max"])} for c, r in data["targets"].items()}
+    if "screener" in data:
+        # файл мог выгрузить старый экспорт или написать ChatGPT по старому примеру — приводим раздел к текущему
+        # формату; неявные дефолты прежних версий добавляются только для файлов без версии
+        import config_migrate as CM
+        old = CM.version_of(data) < 1
+        new["screener"] = CM.normalize_screener(data["screener"], None if old else {})
     new["setup_done"] = True
     return new, errs, replaced
 

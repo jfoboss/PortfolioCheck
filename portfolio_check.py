@@ -731,7 +731,8 @@ def main() -> None:
     if not token:
         sys.exit("Нет токена: задай его в приложении (Настройки → Доступ) или через TINKOFF_TOKEN")
 
-    cfg = load_config(args.config)
+    import config_migrate as CM
+    cfg, _ = CM.migrate(load_config(args.config))   # CLI файл не переписывает — только читает в актуальном формате
     positions = load_portfolio(token, cfg)
 
     if args.json:

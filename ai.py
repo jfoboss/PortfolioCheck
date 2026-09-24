@@ -414,7 +414,7 @@ def _fingerprint(*parts: str) -> str:
 
 
 class ResponseCache:
-    """cache/ai_responses.json: {key: {"at": iso, "fp": hash, "data": {...}}}. Один файл на все виды сводок."""
+    """cache/ai_responses.json: {key: {"at": iso, "fp": hash, "data": {...}, "structural": hash}}. Один файл на все виды сводок."""
 
     def __init__(self, cache_dir: Path):
         self.path = cache_dir / "ai_responses.json"

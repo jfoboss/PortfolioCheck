@@ -236,3 +236,20 @@ def test_feed_namespace_html_check_age_and_moex_technical(monkeypatch):
     monkeypatch.setattr(N.net, "fetch", lambda url, timeout=12: b"")
     got, failed = N.fetch_news(["https://www.moex.com/x", "https://interfax.ru/rss"], pos, {})
     assert [i.title for i in got] == ["Сбербанк присоединился к торгам на новом рынке", "МТС отчиталась о прибыли"]
+
+
+def test_alias_word_boundaries_currency_and_gold_adjectives():
+    """Регресс (проверка на всех живых лентах): «Сбер» ловил «сбережения» («ЦБ отмечает изменения в структуре
+    сбережений» → SBERP); «Доллар США» — любые «$11 млрд» и «108 долларов за баррель» по слову из названия;
+    «золот» — прилагательные («CRE Federal Awards … золотой»)."""
+    pos = [NS(ticker="SBERP", name="Сбербанк"), NS(ticker="USD000UTSTOM", name="Доллар США", instrument_type="currency"),
+           NS(ticker="GLDRUB_TOM", name="Золото", instrument_type="currency")]
+    kw = N.build_keywords(pos, N.DEFAULT_ALIASES)
+    r = lambda t, k: N.refers(t.lower(), kw[k])
+    assert not r("ЦБ отмечает изменения в структуре сбережений россиян", "SBERP")
+    assert r("Глава «Сбера» подтвердил планы", "SBERP") and r("Сбер открыл стадион", "SBERP")
+    assert not r("SoftBank выпустил облигации на сумму свыше $11 млрд долларов", "USD000UTSTOM")
+    assert not r("Цена на нефть марки Brent превысила 108 долларов за баррель", "USD000UTSTOM")
+    assert r("ЦБ повысил официальный курс доллара на 25 сентября", "USD000UTSTOM")
+    assert not r("Золотой юбилей рынка недвижимости: премия на рынке", "GLDRUB_TOM")
+    assert r("Минфин предложил повысить спрос на физическое золото на рынке", "GLDRUB_TOM")

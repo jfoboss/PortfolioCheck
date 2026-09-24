@@ -138,7 +138,7 @@ class IdeasMixin:
         self.scr_worker.failed.connect(lambda m: (log.error("скринер: %s", m), self.btn_screen.setEnabled(True),
                                                   self.set_status(f"Скринер: {m[:120]}"), self.pipeline_step("ideas", None),
                                                   self.lbl_ideas.setText(f"<span style='color:#FF453A'><b>Скринер не отработал:</b> {m[:300]}</span><br>"
-                                                                         "Проверь связь с MOEX ISS: «О программе» → «Проверить подключения».")))
+                                                                         "Проверь связь: Справка → «Проверить подключения».")))
         self.scr_worker.start()
 
     def _on_ideas(self, result) -> None:
@@ -200,7 +200,7 @@ class IdeasMixin:
                 txt += f" Ошибок запросов: {result.errors}" + (f" (последняя: {result.last_error})" if result.last_error else "") + "."
             if not ideas:
                 txt += " <span style='color:#FF9F0A'>Пусто: " + (
-                    "T-Invest не отдал фундаментал — см. ошибку выше и лог в «О программе»; нажми «Найти кандидатов», чтобы повторить без кэша."
+                    "T-Invest не отдал фундаментал — см. ошибку выше и лог (Справка → Диагностика и лог); нажми «Найти кандидатов», чтобы повторить без кэша."
                     if result.paying == 0 else
                     "ослабь фильтры (например, 6% и 20 млрд) и нажми «Найти кандидатов».") + "</span>"
             self.lbl_ideas.setText(txt)

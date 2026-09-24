@@ -1088,7 +1088,7 @@ class SettingsDialog(QDialog):
             where = SEC.set(KEYRING_SERVICE, KEYRING_USER, tok.strip())
             if where == "file":
                 QMessageBox.information(self, "Токен сохранён в файле",
-                                        "Keychain не принял запись (подробности в «О программе» → лог). Токен сохранён в локальной "
+                                        "Keychain не принял запись (подробности: Справка → Диагностика и лог). Токен сохранён в локальной "
                                         "папке с правами только для твоего пользователя — приложение работает.")
             self._refresh_token_label()
             self.accessChanged.emit()

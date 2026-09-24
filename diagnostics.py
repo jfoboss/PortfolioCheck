@@ -1,5 +1,5 @@
 """
-diagnostics.py — логирование и вкладка «О программе»: окружение, пути, хвост лога, проверка подключений,
+diagnostics.py — логирование и окно «О программе»: окружение, пути, хвост лога, проверка подключений,
 «Скопировать диагностику» (без токена и без сумм — можно отправлять как есть).
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QFont
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QDialog
 
 APP_VERSION = "1.1"
 LOG_NAME = "portfolio-check.log"
@@ -209,3 +209,26 @@ class AboutTab(QWidget):
             log.error("не удалось очистить лог: %s", e)
         log.info("лог очищен пользователем")
         self.refresh()
+
+
+class AboutWindow(QDialog):
+    """«О программе» — отдельным окном, как Настройки (раньше было вкладкой рядом с рабочими экранами).
+    На macOS пункт меню уезжает в меню приложения (AboutRole)."""
+
+    def __init__(self, app_ctx, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("О программе PortfolioCheck")
+        self.setModal(False)
+        self.tab = AboutTab(app_ctx, self)
+        lay = QVBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(self.tab)
+        self.resize(900, 620)
+
+    def showEvent(self, e) -> None:
+        self.tab.refresh()                        # свежий хвост лога при каждом открытии
+        super().showEvent(e)
+
+    def closeEvent(self, e) -> None:
+        wk = getattr(self.tab, "worker", None)
+        if wk is not None and wk.isRunning():     # проверка подключений — не уничтожать живой поток
+            wk.wait(15000)
+        super().closeEvent(e)

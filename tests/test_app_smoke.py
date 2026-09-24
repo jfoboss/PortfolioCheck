@@ -95,3 +95,33 @@ def test_ai_check_button_runs_in_background(window, monkeypatch):
     QApplication.processEvents()
     assert seen["thread"] != ui_thread and "подходит" in dlg.lbl_ai_test.text()
     dlg.close()
+
+
+def test_menu_has_everything_for_macos(window):
+    """Меню: всё, что есть на тулбаре и в «О программе», доступно из меню с сочетаниями; роли macOS расставлены
+    (Настройки и «О программе» уезжают в меню приложения, «Выход» — туда же)."""
+    from PySide6.QtGui import QAction, QKeySequence
+    menus = {a.text(): a.menu() for a in window.menuBar().actions()}
+    assert list(menus) == ["Файл", "Вид", "Окно", "Справка"]
+    acts = {a.text(): a for m in menus.values() for a in m.actions() if a.text()}
+    assert acts["Настройки…"].menuRole() == QAction.PreferencesRole
+    assert acts["О программе PortfolioCheck"].menuRole() == QAction.AboutRole
+    assert acts["Выход"].menuRole() == QAction.QuitRole
+    assert QKeySequence("Ctrl+R") in acts["Обновить"].shortcuts()
+    priv = window.act_privacy                  # текст переключается: «Скрыть суммы» / «Показать суммы»
+    assert priv in acts.values() and priv.shortcut() == QKeySequence("Ctrl+Shift+H") and priv.isCheckable()
+    for k in ("Диагностика и лог…", "Проверить подключения", "Свернуть", "Во весь экран", "ИИ-сводки по экранам",
+              "Мастер настройки…", "Открыть снапшот…", "Сохранить снапшот…"):
+        assert k in acts, k
+    tabs = [window.tabs.tabText(i) for i in range(window.tabs.count())]
+    assert tabs == ["Обзор", "Портфель", "Рынок", "Идеи", "Стратегия"]      # «О программе» — не вкладка
+    for i, t in enumerate(tabs):
+        assert acts[t].shortcut() == QKeySequence(f"Ctrl+{i + 1}")
+    acts["Идеи"].trigger()
+    assert window.tabs.tabText(window.tabs.currentIndex()) == "Идеи"
+
+
+def test_about_is_a_separate_window(window):
+    window.act_about.trigger()
+    assert window.about_win.isVisible() and window.about_win.tab.lbl_env.text()
+    window.about_win.close()

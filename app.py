@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (QButtonGroup, QRadioButton, QCheckBox, QDoubleSpi
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QVBoxLayout, QHBoxLayout, QWidget,
     QPushButton, QLabel, QProgressBar, QMessageBox, QFileDialog, QSystemTrayIcon,
-    QStyle, QToolBar, QStatusBar, QSplitter,
+    QStyle, QToolBar, QStatusBar, QSplitter, QSizePolicy,
 )
 
 import portfolio_check as pc
@@ -127,7 +127,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.act_prefs.triggered.connect(self.open_settings)
 
         self.act_refresh = QAction("Обновить", self)
-        self.act_refresh.setShortcut(QKeySequence.Refresh)
+        # ⌘R на macOS, Ctrl+R и F5 на Windows (у стандартного Refresh на macOS — неочевидное сочетание)
+        self.act_refresh.setShortcuts([QKeySequence("Ctrl+R"), QKeySequence(Qt.Key_F5)])
         self.act_refresh.triggered.connect(lambda: self.refresh(manual=True))
 
         self.act_privacy = QAction("Скрыть суммы", self)
@@ -142,16 +143,56 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         act_save = QAction("Сохранить снапшот…", self); act_save.setShortcut(QKeySequence.Save)
         act_save.triggered.connect(self.save_snapshot)
 
+        # «О программе» — отдельное окно; на macOS пункт уезжает в меню приложения (роль AboutRole)
+        self.act_about = QAction("О программе PortfolioCheck", self)
+        self.act_about.setMenuRole(QAction.AboutRole)
+        self.act_about.triggered.connect(self.open_about)
+        act_quit = QAction("Выход", self); act_quit.setMenuRole(QAction.QuitRole)
+        act_quit.setShortcut(QKeySequence.Quit if not QKeySequence(QKeySequence.Quit).isEmpty() else QKeySequence("Ctrl+Q"))
+        act_quit.triggered.connect(self.close)
+
         m_file = self.menuBar().addMenu("Файл")
         act_wizard = QAction("Мастер настройки…", self); act_wizard.triggered.connect(lambda: self.run_wizard(first=False))
         m_file.addAction(act_wizard); m_file.addSeparator()
         m_file.addAction(act_open); m_file.addAction(act_save)
         m_file.addSeparator(); m_file.addAction(self.act_prefs)
+        m_file.addSeparator(); m_file.addAction(act_quit)
+
         m_view = self.menuBar().addMenu("Вид")
         m_view.addAction(self.act_refresh)
         m_view.addSeparator(); m_view.addAction(self.act_privacy)
         act_exec = QAction("ИИ-сводки по экранам", self); act_exec.setShortcut(QKeySequence("Ctrl+Shift+I"))
         act_exec.triggered.connect(lambda: self.run_exec(manual=True)); m_view.addSeparator(); m_view.addAction(act_exec)
+        m_view.addSeparator()
+        self.screen_actions = []                 # ⌘1…⌘5 — экраны; заполняется после сборки вкладок
+        self.m_view = m_view
+
+        m_win = self.menuBar().addMenu("Окно")
+        act_min = QAction("Свернуть", self); act_min.setShortcut(QKeySequence("Ctrl+M")); act_min.triggered.connect(self.showMinimized)
+        act_full = QAction("Во весь экран", self)
+        act_full.setShortcut(QKeySequence.FullScreen if not QKeySequence(QKeySequence.FullScreen).isEmpty() else QKeySequence("F11"))
+        act_full.triggered.connect(lambda: self.showNormal() if self.isFullScreen() else self.showFullScreen())
+        m_win.addAction(act_min); m_win.addAction(act_full)
+
+        m_help = self.menuBar().addMenu("Справка")
+        act_diag = QAction("Диагностика и лог…", self); act_diag.triggered.connect(self.open_about)
+        act_check = QAction("Проверить подключения", self)
+        act_check.triggered.connect(lambda: (self.open_about(), self.about_win.tab.run_checks()))
+        m_help.addAction(act_diag); m_help.addAction(act_check); m_help.addSeparator(); m_help.addAction(self.act_about)
+
+    def _build_screen_actions(self) -> None:
+        """Вид → экраны по ⌘1…⌘N (на macOS Ctrl в Qt — это ⌘)."""
+        for i in range(self.tabs.count()):
+            a = QAction(self.tabs.tabText(i), self)
+            if i < 9:
+                a.setShortcut(QKeySequence(f"Ctrl+{i + 1}"))
+            a.triggered.connect(lambda _=False, i=i: self.tabs.setCurrentIndex(i))
+            self.m_view.addAction(a); self.screen_actions.append(a)
+
+    def open_about(self) -> None:
+        if getattr(self, "about_win", None) is None:
+            self.about_win = DIAG.AboutWindow(self, self)
+        self.about_win.show(); self.about_win.raise_(); self.about_win.activateWindow()
 
     def _build_ui(self) -> None:
         tb = QToolBar("Основная")
@@ -164,7 +205,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.act_privacy.setIcon(self.style().standardIcon(QStyle.SP_DialogNoButton))
         tb.addAction(self.act_refresh)
         tb.addAction(self.act_privacy)
-        tb.addAction(self.act_prefs)
+        spacer = QWidget(); spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred); tb.addWidget(spacer)
+        tb.addAction(self.act_prefs)             # настройки — справа, как в приложениях macOS
         self.addToolBar(tb)
         self.setUnifiedTitleAndToolBarOnMac(True)
 
@@ -339,15 +381,17 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         for sb in (self.sp_min_yield, self.sp_min_cap, self.sp_max_debt):
             sb.valueChanged.connect(lambda _: self.refilter_ideas())
         il.addLayout(irow); il.addWidget(self.tbl_ideas, 1); il.addWidget(self.lbl_ideas)
-        market_bottom = QSplitter(Qt.Horizontal); market_bottom.setObjectName("market_bottom")
-        market_bottom.addWidget(news_w); market_bottom.addWidget(ideas_w)
-        market = QSplitter(Qt.Vertical); market.setObjectName("market"); market.addWidget(heat_w); market.addWidget(market_bottom)
+        market = QSplitter(Qt.Vertical); market.setObjectName("market"); market.addWidget(heat_w); market.addWidget(news_w)
         market.setStretchFactor(0, 3); market.setStretchFactor(1, 2)
         mk = QWidget(); mkl = QVBoxLayout(mk); mkl.setContentsMargins(8, 8, 8, 8)
         mkl.addWidget(self.exec_panels["market"]); mkl.addWidget(market, 1)
         self.tabs.addTab(mk, "Рынок")
 
-        # ================= экран 4: Стратегия =================
+        # ================= экран 4: Идеи (скринер) — отдельно: таблице нужна вся ширина =================
+        idw = QWidget(); idl = QVBoxLayout(idw); idl.setContentsMargins(8, 8, 8, 8); idl.addWidget(ideas_w, 1)
+        self.tabs.addTab(idw, "Идеи")
+
+        # ================= экран 5: Стратегия =================
         self.forecast = ForecastTab(self.cfg.get("forecast"))
         self.forecast.paramsChanged.connect(self.on_forecast_changed)
         self.forecast.request_refresh = self._push_growth_to_forecast
@@ -366,8 +410,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         for panel in list(self.exec_panels.values()) + [self.ai_panel, self.ai_small]:
             panel.spinner = BusySpinner(panel)
 
-        self.about = DIAG.AboutTab(self)
-        self.tabs.addTab(self.about, "О программе")
+        self._build_screen_actions()
 
         central = QWidget(); cl_ = QVBoxLayout(central); cl_.setContentsMargins(0, 0, 0, 0); cl_.setSpacing(0)
         cl_.addWidget(self.banner); cl_.addWidget(self.tabs, 1)
@@ -413,6 +456,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                 wk.terminate(); wk.wait(2000)
         if self.settings_win is not None:
             self.settings_win.close()
+        if getattr(self, "about_win", None) is not None:
+            self.about_win.close()
         super().closeEvent(event)
 
     def on_forecast_changed(self, params: dict) -> None:
@@ -475,7 +520,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         s = self._qsettings()
         s.setValue("geometry", self.saveGeometry())
         s.setValue("window_state", self.saveState())
-        s.setValue("tab", self.tabs.currentIndex())
+        s.setValue("tab_name", self.tabs.tabText(self.tabs.currentIndex()))   # по имени: порядок вкладок меняется
         for name, sp in self._all_splitters().items():
             s.setValue(f"splitter/{name}", sp.saveState())
         s.sync()
@@ -496,12 +541,10 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
             v = s.value(f"splitter/{name}")
             if v is not None:
                 sp.restoreState(v)
-        tab = s.value("tab")
-        if tab is not None:
-            try:
-                self.tabs.setCurrentIndex(int(tab))
-            except Exception:  # noqa: BLE001
-                pass
+        name = s.value("tab_name")
+        for i in range(self.tabs.count()):
+            if name and self.tabs.tabText(i) == name:
+                self.tabs.setCurrentIndex(i)
 
     # ---- старт с диска ------------------------------------------------------
 

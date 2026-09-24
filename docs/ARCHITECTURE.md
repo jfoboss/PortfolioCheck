@@ -19,6 +19,7 @@ app.py  ── главное окно, 4 экрана + «О программе
   ai.py               ── провайдеры LLM, сводки, кэш ответов, каталог OpenRouter, разбор 429
   macro.py            ── инфляция и ставка с сайта ЦБ РФ
   paths.py            ── где лежат данные (локально / iCloud Drive), миграция
+  config_migrate.py   ── config_version и явные миграции формата конфига
   secrets_store.py    ── Keychain через /usr/bin/security
 ```
 
@@ -44,6 +45,7 @@ app.py  ── главное окно, 4 экрана + «О программе
 | путь | что | кто пишет |
 |---|---|---|
 | `config.yaml` | стратегия, классы, правила, настройки, параметры прогноза | настройки, мастер, импорт |
+| `config.yaml.v<N>.bak` | копия конфига версии N перед миграцией | `config_migrate.load_and_migrate` |
 | `snapshots/YYYY-MM-DD.json` | позиции на дату (история стоимости) | `on_loaded` |
 | `cache/candles_<figi или uid>.json` | дневные свечи `[(дата, close)]` | `history.fetch_candles` |
 | `cache/news.json` | лента | `news.save_cache` |
@@ -59,9 +61,13 @@ app.py  ── главное окно, 4 экрана + «О программе
 
 ## Ключевые форматы
 
-- **Конфиг**: разделы `targets`, `rules`, `instruments`, `screener`, `news`, `ai`, `forecast`, `refresh`,
+- **Конфиг**: `config_version` (первой строкой; нет — значит 0), разделы `targets`, `rules`, `instruments`, `screener`, `news`, `ai`, `forecast`, `refresh`,
   `fx_fallback`, `account`, служебные `setup_done`, `strategy_preset`, `auto_classify`, `auto_classified`.
   Схему «стратегии» (переносимой части) задают `strategy.STRATEGY_KEYS` и `strategy.validate_strategy`.
+  Окно читает конфиг через `config_migrate.load_and_migrate`: старый конфиг мигрирует по шагам `MIGRATIONS`,
+  сохраняется, рядом остаётся `.bak`. Конфиг новее программы не переписывается. Код читает конфиг как есть —
+  дефолты к данным пользователя не домешиваются (`screener.blacklist` — только из конфига, без
+  `blacklist_customized`, который убран в v1).
 - **Position** (`portfolio_check.Position`): тикер, имя, figi/isin, тип, валюта, класс, количество, средняя и
   текущая цена, стоимость в ₽, выплаты за 12 мес (`div_12m`), флаги блокировки и оценки справедливой цены.
 

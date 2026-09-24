@@ -98,7 +98,6 @@ instruments:
 screener:
   blacklist:
     TICKER: "почему отказался"
-  blacklist_customized: true
 forecast:
   target_monthly_real: 100000
   monthly_contribution: 30000

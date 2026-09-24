@@ -18,6 +18,7 @@ cache/
 strategy*.yaml
 portfolio-strategy.yaml
 config.local.yaml
+config.yaml.v*.bak
 
 # macOS
 .DS_Store

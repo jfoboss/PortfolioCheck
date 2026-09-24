@@ -41,6 +41,7 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --hidden-import ai \
   --hidden-import secrets_store \
   --hidden-import strategy \
+  --hidden-import config_migrate \
   --hidden-import wizard \
   --add-data "docs:docs" \
   --hidden-import portfolio_check \

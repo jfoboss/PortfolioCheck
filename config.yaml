@@ -3,6 +3,8 @@
 # Потом всё правится в Настройках; руками этот файл редактировать не обязательно.
 # Рабочая копия лежит в ~/Library/Application Support/PortfolioCheck/ (или в iCloud Drive, если выбрано).
 
+config_version: 1        # версия формата; старые конфиги программа обновляет сама (копия — config.yaml.v<N>.bak)
+
 account:
   id: ""                 # пусто — первый брокерский счёт; иначе id из «Настройки → Доступ»
 
@@ -33,7 +35,6 @@ rules:
 
 screener:
   blacklist: {}                          # тикер: "причина" — не предлагать в «Идеях»
-  blacklist_customized: true
 
 refresh:
   on_launch: true

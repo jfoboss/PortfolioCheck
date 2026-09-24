@@ -174,7 +174,30 @@ def parse_feed(data: bytes, source: str) -> list[NewsItem]:
 # Слова, которые сами по себе ничего не означают: «Банк Санкт-Петербург» не должен ловить все новости про банки
 GENERIC_WORDS = {"банк", "группа", "холдинг", "компания", "корпорация", "концерн", "инвест", "финанс", "капитал",
                  "россия", "российский", "русский", "русская", "первый", "первая", "объединённая", "объединенная",
-                 "акции", "фонд", "зпиф", "заблокированные", "интер", "новый", "новая", "центр"}
+                 "акции", "фонд", "зпиф", "заблокированные", "интер", "новый", "новая", "центр",
+                 "московская", "московский", "национальная", "национальный", "международная", "международный",
+                 "федеральная", "федеральный", "северная", "южная", "восточная", "западная", "городская"}
+
+# Спорт — не про бумаги: «золото» чемпионата, «Единая лига ВТБ», «Газпром-Югра». Такие новости не привязываются ни к
+# бумагам, ни к макро. Основы ищутся подстрокой в тексте в нижнем регистре.
+OFFTOPIC_WORDS = ("матч", "турнир", "чемпионат", "чемпион мира", "чемпион европ", "олимпи", "медал", "спортсмен",
+                  "сборная", "сборной", "футбол", "хоккей", "баскетбол", "волейбол", "теннис", "боксер", "боксёр",
+                  "по боксу", "единоборств", "биатлон", "фигурист", "кхл", "рпл", "лиги втб", "лига втб", "лигу втб",
+                  "полуфинал", "плей-офф", "в финале", "забил", "тренер", "легкоатлет", "гран-при")
+
+# Основы, которые без рыночного контекста значат что угодно: «золото» — медаль, «Золотая маска», «золотой век».
+# Совпадение по ним засчитывается, только если рядом есть слово из MARKET_CONTEXT.
+AMBIGUOUS_WORDS = {"золот", "серебр"}
+MARKET_CONTEXT = ("цен", "стоимост", "котиров", "унци", "доллар", "рубл", "бирж", "торг", "рынок", "рынк", "драгмет",
+                  "металл", "подорож", "подешев", "дешев", "инвест", "резерв", "слитк", "тонн", "добыч",
+                  "золотодобы", "спрос", "etf", "фрс", "ставк")
+# с начала слова: иначе «цен» находится в «сцене» (та же «Золотая маска») и «лицензии»
+_MARKET_RE = re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, MARKET_CONTEXT)) + ")")
+
+
+def offtopic(text: str) -> bool:
+    """Новость не про рынок (спорт) — text уже в нижнем регистре."""
+    return any(w in text for w in OFFTOPIC_WORDS)
 
 
 def build_keywords(positions, aliases: dict[str, list[str]]) -> dict[str, list[str]]:
@@ -184,7 +207,9 @@ def build_keywords(positions, aliases: dict[str, list[str]]) -> dict[str, list[s
     for p in positions:
         explicit = list(aliases.get(p.ticker, []))
         words = list(explicit)
-        parts = [w for w in re.split(r"[\s\-—(),]+", p.name or "") if w]
+        # есть явные алиасы — имя из названия не нужно: первое слово бывает прилагательным («Московская Биржа»
+        # ловила любую «московскую» новость — филармонию, метро, погоду)
+        parts = [] if explicit else [w for w in re.split(r"[\s\-—(),]+", p.name or "") if w]
         drop = {"пао", "оао", "ао", "ооо", "акции", "обыкновенные", "привилегированные", "им", "зпиф", "бпиф", "пиф"}
         parts = [w for w in parts if w.lower() not in drop]
         if parts:
@@ -213,11 +238,24 @@ def mentions(text: str, w: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(w)}(?!\w)", text) is not None
 
 
+def refers(text: str, words) -> bool:
+    """Относится ли новость (text — в нижнем регистре) к бумаге с ключами words: спорт — никогда, неоднозначная
+    основа («золот») — только рядом с рыночным словом. Общая проверка для ленты, «Идей» и карточки."""
+    if offtopic(text):
+        return False
+    for w in words:
+        if mentions(text, w) and (w.lower() not in AMBIGUOUS_WORDS or _MARKET_RE.search(text)):
+            return True
+    return False
+
+
 def match(items: list[NewsItem], keywords: dict[str, list[str]]) -> list[NewsItem]:
     out = []
     for it in items:
         text = f"{it.title} {it.summary}".lower()
-        hits = [t for t, words in keywords.items() if any(mentions(text, w) for w in words)]
+        if offtopic(text):
+            continue
+        hits = [t for t, words in keywords.items() if refers(text, words)]
         if hits or any(k.lower() in text for k in MACRO_KEYWORDS):
             it.matched = hits
             out.append(it)

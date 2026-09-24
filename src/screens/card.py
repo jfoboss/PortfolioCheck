@@ -41,7 +41,7 @@ def card_data(win, ticker: str) -> dict:
     kw = NEWS.build_keywords([pos or idea or type("P", (), {"ticker": ticker, "name": name})()],
                              {**NEWS.DEFAULT_ALIASES, **((win.cfg.get("news") or {}).get("aliases") or {})}).get(ticker, [])
     news = [it for it in getattr(win, "news_items", [])
-            if ticker in it.matched or any(NEWS.mentions(f"{it.title} {it.summary}".lower(), w) for w in kw)]
+            if ticker in it.matched or NEWS.refers(f"{it.title} {it.summary}".lower(), kw)]
     s = getattr(win, "ai_summary", None)
     ai = next((i for i in (s.items if s else []) if i.get("ticker") == ticker), None)
     rules = {}

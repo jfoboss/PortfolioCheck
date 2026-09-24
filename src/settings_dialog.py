@@ -319,8 +319,10 @@ class ModelPicker(QWidget):
         self.form = None                 # строки каталога живут в форме настроек отдельными строками
         self.cb_free.toggled.connect(self._fill)
         self.b_reload = QPushButton("Обновить список"); self.b_reload.setToolTip("Загрузить свежий каталог моделей OpenRouter")
-        self.lbl = QLabel(); self.lbl.setStyleSheet("color: gray"); self.lbl.setWordWrap(True)   # не распирает окно
-        row.addWidget(self.cb_free); row.addWidget(self.b_reload); row.addWidget(self.lbl, 1)
+        # статус каталога — своей строкой под кнопками (форма ставит её в блок каталога): справа от кнопки ему
+        # доставалась узкая колонка, текст переносился в 3–4 строки и обрезался по высоте
+        self.lbl = AutoHeightLabel()
+        row.addWidget(self.cb_free); row.addWidget(self.b_reload); row.addStretch(1)
         self.catalog_row = QWidget(); self.catalog_row.setLayout(row)
         lay.addWidget(self.combo)
         self.why = AutoHeightLabel()
@@ -355,7 +357,7 @@ class ModelPicker(QWidget):
         box = self.catalog_row.parentWidget()
         if self.form is not None and box is not None:
             self.form.setRowVisible(box, on)
-        self.catalog_row.setVisible(on); self.why.setVisible(on)
+        self.catalog_row.setVisible(on); self.why.setVisible(on); self.lbl.setVisible(on)
         if not on:
             cur = self.combo.lineEdit().text()
             self.combo.blockSignals(True); self.combo.clear(); self.combo.blockSignals(False)
@@ -1030,12 +1032,17 @@ class SettingsDialog(QDialog):
         # каталог, пояснение и лимиты — в одном блоке: так многострочный текст корректно считает высоту
         self.ai_catalog_box = QWidget(); cb_lay = QVBoxLayout(self.ai_catalog_box)
         cb_lay.setContentsMargins(0, 0, 0, 0); cb_lay.setSpacing(4)
-        cb_lay.addWidget(self.ai_model.catalog_row); cb_lay.addWidget(self.ai_model.why); cb_lay.addWidget(self.lbl_ai_tier)
+        cb_lay.addWidget(self.ai_model.catalog_row); cb_lay.addWidget(self.ai_model.lbl)
+        cb_lay.addWidget(self.ai_model.why); cb_lay.addWidget(self.lbl_ai_tier)
         form.addRow("", self.ai_catalog_box)
         self.ai_model.form = form; self._ai_form = form
         form.addRow("Прокси:", self.ai_proxy); form.addRow("Endpoint:", self.ai_url)
         form.addRow(self.cb_ai_auto)
-        form.addRow("Не пересчитывать чаще, чем раз в:", self.sp_ai_interval)
+        # длинная подпись — не в колонку подписей формы: она задаёт ширину колонки, и на macOS (подписи прижаты
+        # вправо) все поля страницы съезжали вправо, слева оставалось пустое поле в треть окна
+        iv = QWidget(); iv_lay = QHBoxLayout(iv); iv_lay.setContentsMargins(0, 0, 0, 0)
+        iv_lay.addWidget(QLabel("Не пересчитывать чаще, чем раз в")); iv_lay.addWidget(self.sp_ai_interval); iv_lay.addStretch(1)
+        form.addRow(iv)
         form.addRow(_note("Ответы кэшируются: при тех же новостях/данных запрос не уходит вообще, а при изменившихся — не чаще "
                           "заданного интервала. Кнопка «ИИ-сводка» и "
                           f"{native_keys('Ctrl+Shift+I')} пересчитывают принудительно.", gray=True))

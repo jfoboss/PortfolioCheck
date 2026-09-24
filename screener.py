@@ -205,3 +205,47 @@ def screen(token: str, min_yield: float, min_cap_bln: float, exclude: set[str], 
                      stats.get("errors", 0), stats.get("last_error", ""))
     r.all_ideas = ideas       # для перефильтрации без похода в сеть (чёрный список из контекстного меню)
     return r
+
+
+# ---------------------------------------------------------------------------
+# Сравнение с отраслью (BACKLOG п. 20, аналог RV/COMP у Bloomberg): бумага против медианы своей отрасли
+# по вселенной последнего прохода скринера. Только сравнение — выводы делает человек.
+# ---------------------------------------------------------------------------
+
+# метрика: (подпись, атрибут Idea, что считается благоприятным: +1 — выше, −1 — ниже, 0 — без оценки, формат)
+PEER_METRICS = [("Дивдоходность", "div_yield", 1, "{:.1f}%"), ("Средняя за 5 лет", "avg5y_div_yield", 1, "{:.1f}%"),
+                ("P/E", "pe", -1, "{:.1f}"), ("Долг/EBITDA", "net_debt_ebitda", -1, "{:.1f}"),
+                ("ROE", "roe", 1, "{:.1f}%"), ("Free float", "free_float", 0, "{:.0f}%"),
+                ("Капитализация, млрд ₽", "cap_bln", 0, "{:,.0f}")]
+
+
+def _median(xs: list[float]) -> float | None:
+    xs = sorted(xs)
+    if not xs:
+        return None
+    m = len(xs) // 2
+    return xs[m] if len(xs) % 2 else (xs[m - 1] + xs[m]) / 2
+
+
+def peer_comparison(ticker: str, universe: list) -> dict | None:
+    """{sector, peers: [тикеры], rows: [(подпись, значение, медиана, знак: +1 благоприятно / −1 / 0, формат)]}.
+    Медиана — по отрасли без самой бумаги; пропуски данных не считаются нулём. None — бумаги нет во вселенной
+    или у неё нет отраслевых соседей."""
+    me = next((i for i in universe if i.ticker == ticker), None)
+    if me is None or not me.sector:
+        return None
+    peers = [i for i in universe if i.sector == me.sector and i.ticker != ticker]
+    if not peers:
+        return None
+    rows = []
+    for label, attr, better, fmt in PEER_METRICS:
+        v = getattr(me, attr, None)
+        vals = [x for x in (getattr(p, attr, None) for p in peers) if x is not None]
+        if attr == "pe":
+            vals = [x for x in vals if x > 0]             # отрицательный P/E — убыток, в медиану «дешевизны» не идёт
+        med = _median(vals)
+        sign = 0
+        if better and v is not None and med is not None and v != med:
+            sign = better if v > med else -better
+        rows.append((label, v, med, sign, fmt))
+    return {"sector": me.sector, "peers": [p.ticker for p in peers], "rows": rows}

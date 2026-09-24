@@ -43,3 +43,19 @@ def test_free_float_and_sectors():
     ideas = [idea("THIN", ff=5), idea("NOFF", ff=None), idea("IT1", sector="IT"), idea("OK")]
     assert set(tickers(ideas, min_free_float=10)) == {"IT1", "OK"}
     assert set(tickers(ideas, exclude_sectors=("IT",))) == {"THIN", "NOFF", "OK"}
+
+
+def test_peer_comparison_median_and_direction():
+    """Сравнение с отраслью: медиана без самой бумаги, пропуски не считаются нулём, отрицательный P/E не в медиане,
+    знак — «благоприятнее» по смыслу метрики (доходность выше, P/E и долг ниже)."""
+    u = [idea("ME", dy=12, pe=4, debt=0.5), idea("P1", dy=8, pe=6, debt=1.0), idea("P2", dy=10, pe=-3, debt=None),
+         idea("P3", dy=9, pe=8, debt=2.0), idea("OTHER", dy=20, sector="IT")]
+    c = S.peer_comparison("ME", u)
+    assert c["sector"] == "Нефть и газ" and sorted(c["peers"]) == ["P1", "P2", "P3"]
+    rows = {label: (v, med, sign) for label, v, med, sign, _f in c["rows"]}
+    assert rows["Дивдоходность"] == (12, 9, 1)
+    assert rows["P/E"] == (4, 7.0, 1)                       # медиана по 6 и 8; −3 не учитывается
+    assert rows["Долг/EBITDA"] == (0.5, 1.5, 1)             # None у P2 пропущен
+    assert rows["Free float"][2] == 0                       # без оценки
+    assert S.peer_comparison("OTHER", u) is None            # соседей по отрасли нет
+    assert S.peer_comparison("NOPE", u) is None

@@ -7,7 +7,8 @@ alerts.py — оповещения-условия (BACKLOG п. 21, аналог 
   yield_above   — дивдоходность кандидата скринера ≥ значения, %;
   days_to_cut   — до последнего дня покупки под выплату (календарь) осталось ≤ N дней; без тикера — любая бумага;
   corridor      — доля класса вышла из целевого коридора (тикер не нужен);
-  news          — свежая новость по бумаге; без тикера — по любой бумаге портфеля.
+  news          — свежая новость по бумаге; без тикера — по любой бумаге портфеля;
+  cbr_meeting   — до заседания ЦБ по ключевой ставке осталось ≤ N дней (тикер не нужен; календарь — macro.py).
 Оповещение приходит при переходе «не выполнено → выполнено» (состояние — cache/alerts_state.json), поэтому не
 повторяется на каждой перерисовке; новость и отсечка — по одному разу на событие. Формулировки — «условие
 выполнено», без советов (правило 3 проекта).
@@ -27,6 +28,7 @@ KINDS = {
     "days_to_cut": "До последнего дня покупки ≤, дней",
     "corridor": "Класс вышел из коридора",
     "news": "Новость по бумаге",
+    "cbr_meeting": "До заседания ЦБ по ставке ≤, дней",
 }
 STATE_FILE = "alerts_state.json"
 NEWS_FRESH_H = 24                      # новости старше — не повод будить
@@ -46,8 +48,9 @@ def _num(v, default=0.0) -> float:
 
 
 def evaluate(rules: list[dict], positions=(), ideas=(), payouts=(), class_status=None, news=(),
-             today: date | None = None, now: datetime | None = None) -> list[Hit]:
-    """Все выполненные сейчас условия. class_status — {класс: (доля %, min, max)}; payouts — payouts.Payout."""
+             today: date | None = None, now: datetime | None = None, macro_events=()) -> list[Hit]:
+    """Все выполненные сейчас условия. class_status — {класс: (доля %, min, max)}; payouts — payouts.Payout;
+    macro_events — macro.MacroEvent."""
     today = today or date.today()
     now = now or datetime.now()
     price = {p.ticker: float(p.cur_price) for p in positions if float(p.cur_price or 0) > 0}
@@ -83,6 +86,13 @@ def evaluate(rules: list[dict], positions=(), ideas=(), payouts=(), class_status
                 if share < lo or share > hi:
                     side = "ниже" if share < lo else "выше"
                     hits.append(Hit(f"{rid}:{cls}:{side}", f"Класс «{cls}»: {share:.1f}% — {side} коридора {lo:g}–{hi:g}%"))
+        elif kind == "cbr_meeting":
+            for e in macro_events:
+                left = (date.fromisoformat(e.date) - today).days
+                if e.kind == "meeting" and 0 <= left <= v:
+                    hits.append(Hit(f"{rid}:{e.date}", f"Заседание ЦБ по ключевой ставке {date.fromisoformat(e.date):%d.%m} — "
+                                                       f"через {left} дн." + (" (с новым среднесрочным прогнозом)" if e.forecast else "")))
+                    break                                    # только ближайшее
         elif kind == "news":
             for it in news:
                 tick = [x for x in it.matched if (x == t if t else x in mine)]
@@ -119,4 +129,6 @@ def describe(rule: dict) -> str:
     kind = rule.get("kind")
     if kind == "corridor":
         return KINDS[kind]
+    if kind == "cbr_meeting":
+        return f"{KINDS[kind]} {rule.get('value', '')}".strip()
     return f"{KINDS.get(kind, kind)} {rule.get('value', '')} — {t}".strip()

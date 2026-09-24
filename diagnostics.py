@@ -137,6 +137,15 @@ class ConnectivityWorker(QThread):
         check("MOEX ISS (индекс для сценариев)", factor(FA.ISS_URL, FA.parse_iss, "IMOEX"))
         check("ЦБ РФ (курс доллара для сценариев)", factor(FA.CBR_URL, FA.parse_cbr, "USD/RUB"))
 
+        def calendar():
+            from datetime import date
+            import macro
+            from news import _fetch
+            ev = macro.upcoming(macro.parse_cbr_calendar(_fetch(macro.CAL_URL).decode("utf-8", "replace")), date.today())
+            meet = next((e for e in ev if e.kind == macro.MEETING), None)
+            return f"событий {len(ev)}, ближайшее заседание {meet.date}" if meet else f"событий {len(ev)}, заседаний впереди нет"
+        check("ЦБ РФ (календарь решений по ставке)", calendar)
+
         def fundamentals():
             import portfolio_check as pc
             from tinkoff.invest.schemas import GetAssetFundamentalsRequest, InstrumentStatus

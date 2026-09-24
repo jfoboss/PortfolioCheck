@@ -192,6 +192,13 @@ def fill_caches(d: Path, positions) -> None:
         usd = _candles("USDRUB", "cash", 90.0)[-n:]
         (cache / f"candles_{FA.USDRUB}.json").write_text(json.dumps(usd), encoding="utf-8")
 
+    # календарь ЦБ по ставке — вымышленные даты от сегодняшнего дня (сеть в демо не используется)
+    import macro
+    macro.save_calendar([macro.MacroEvent((today + timedelta(days=dd)).isoformat(), k, macro.KIND_LABEL[k], fc)
+                         for dd, k, fc in ((-20, macro.MEETING, False), (-8, macro.SUMMARY, False),
+                                           (12, macro.MEETING, True), (25, macro.SUMMARY, False),
+                                           (68, macro.MEETING, False), (80, macro.SUMMARY, False))], cache)
+
     # история стоимости: снапшот на первое число последних 12 месяцев — текущий состав по ценам тех дней,
     # масштабированный под пополнения (раньше позиций было меньше)
     rows = json.loads(SNAPSHOT.read_text(encoding="utf-8"))

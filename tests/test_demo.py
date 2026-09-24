@@ -25,6 +25,7 @@ assert w.news_items and w.tbl_ideas.rowCount() > 0, "экран «Рынок» �
 assert w.tbl_payouts.rowCount() >= 3 and w.tbl_cand_div.rowCount() > 0, "календарь в демо пустой"
 assert w.chart_attr.rows and "переоценка" in w.lbl_attr.text(), "атрибуция в демо пустая"
 assert w.tbl_sc.rowCount() > 0 and "Оценка" in w.lbl_sc.text(), "сценарии в демо пустые"
+assert w.tbl_macro.rowCount() >= 3 and "заседание ЦБ" in w.lbl_payouts.text(), "календарь ЦБ в демо пустой"
 assert len(list((d / "snapshots").glob("*.json"))) > 6, "нет истории стоимости"
 assert A.get_token() is None
 assert SEC.set("svc", "u", "секрет") == "session" and SEC.get("svc", "u") == "секрет"

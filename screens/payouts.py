@@ -1,6 +1,6 @@
 """
 screens/payouts.py — экран «Календарь»: ближайшие отсечки и выплаты по портфелю, денежный поток по месяцам,
-отсечки у кандидатов скринера. Миксин MainWindow (состояние — атрибуты окна). Модель — payouts.py.
+отсечки у кандидатов скринера, заседания ЦБ по ключевой ставке (macro.py). Миксин MainWindow (состояние — атрибуты окна). Модель — payouts.py.
 """
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from datetime import date
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
 
+import macro
 import paths
 import payouts as PO
 from charts import BarChart
@@ -44,6 +45,11 @@ class PayoutsMixin:
         chart_w = self._doc_panel(QWidget()); cl = QVBoxLayout(chart_w); cl.setContentsMargins(4, 4, 4, 4)
         cl.addWidget(self.chart_cashflow, 1)
         chart_w.setMinimumWidth(380)                 # иначе широкая таблица выдавливает график в полоску
+        self.macro_events: list[macro.MacroEvent] = []
+        self.tbl_macro = self._table(["Событие ЦБ", "Дата", "Дней"])
+        self.tbl_macro.setSortingEnabled(False)
+        cl.addWidget(QLabel("<b>Ключевая ставка: календарь ЦБ — 6 месяцев</b>"))
+        cl.addWidget(self.tbl_macro, 1)
         body = QSplitter(Qt.Horizontal); body.setObjectName("payouts"); body.addWidget(left); body.addWidget(chart_w)
         body.setStretchFactor(0, 3); body.setStretchFactor(1, 2)
         w = QWidget(); wl = QVBoxLayout(w); wl.setContentsMargins(8, 8, 8, 8)
@@ -55,6 +61,10 @@ class PayoutsMixin:
     def load_payouts_from_disk(self) -> None:
         items, at = PO.load(paths.data_dir() / "cache")
         self.payouts, self._payouts_at = items, at
+        self.render_payouts()
+
+    def load_macro_calendar(self) -> None:
+        self.macro_events = macro.load_calendar(paths.data_dir() / "cache")
         self.render_payouts()
 
     def set_payouts(self, raw: list) -> None:
@@ -98,7 +108,16 @@ class PayoutsMixin:
                     f"<b>30 дней:</b> отсечек {len(month30)}"
                     + (f", ближайшая — {month30[0].ticker} {month30[0].record_date}" if month30 else "")
                     + (" · оранжевым — последний день покупки в ближайшие 2 недели" if any(r[1] for r in rows) else ""))
+        ev = macro.upcoming(getattr(self, "macro_events", []), today)
+        meet = next((e for e in ev if e.kind == macro.MEETING), None)
+        if meet:
+            days = (date.fromisoformat(meet.date) - today).days
+            head += f" · <b>заседание ЦБ по ставке</b> — {date.fromisoformat(meet.date):%d.%m} (через {days} дн.)"
         self.lbl_payouts.setText(head)
+        self._fill(self.tbl_macro, [([macro.KIND_LABEL[e.kind] + (" + среднесрочный прогноз" if e.forecast else ""), e.date,
+                                      str((date.fromisoformat(e.date) - today).days)],
+                                     TINT_WARN if e.kind == macro.MEETING and (date.fromisoformat(e.date) - today).days <= 7
+                                     else None) for e in ev])
 
         res = getattr(self, "_last_screen", None)
         ideas = getattr(res, "ideas", None) or []

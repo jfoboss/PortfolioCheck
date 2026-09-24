@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QLabel, QPushButton, 
 
 import factors as FA
 import history as H
+import macro
 import paths
 import portfolio_check as pc
 import scenarios as SC
@@ -52,9 +53,10 @@ class ScenariosMixin:
         self.render_scenarios()
 
     def start_factors(self) -> None:
-        """Догрузить индекс и доллар, если кэш старше суток. В демо — не ходим в сеть (ряды сгенерированы)."""
+        """Догрузить индекс и доллар (кэш старше суток) и календарь ЦБ (старше недели). В демо — не ходим в сеть."""
         cache = paths.data_dir() / "cache"
-        if paths.DEMO_DIR is not None or (FA.fresh(cache, FA.IMOEX) and FA.fresh(cache, FA.USDRUB)):
+        if paths.DEMO_DIR is not None or (FA.fresh(cache, FA.IMOEX) and FA.fresh(cache, FA.USDRUB)
+                                          and macro.calendar_fresh(cache)):
             return
         if getattr(self, "factors_worker", None) is not None and self.factors_worker.isRunning():
             return
@@ -68,6 +70,8 @@ class ScenariosMixin:
             log.warning("факторы сценариев: %s", bad)
         self._sc_key = None                           # пересчитать беты
         self.render_scenarios()
+        self.load_macro_calendar()                    # календарь ЦБ → экран «Календарь» и оповещения
+        self.check_alerts()
 
     def _scenario_betas(self):
         cache = paths.data_dir() / "cache"

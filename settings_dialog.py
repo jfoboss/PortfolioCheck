@@ -31,6 +31,7 @@ TARGET_LABELS = CLASS_LABELS
 
 from ai import KEY_SERVICE as AI_KEY_SERVICE   # один источник имени — ai.py
 import style as SY
+from widgets import is_running, note, stop_workers
 KEYRING_SERVICE = "portfolio-check.tinkoff"
 KEYRING_USER = "invest-api-token"
 INVEST_HOST = "invest-public-api.tinkoff.ru"
@@ -86,17 +87,8 @@ def _plus_minus(table: QTableWidget, on_add, on_change) -> QHBoxLayout:
 
 
 def _note(text: str, gray: bool = False, rich: bool = False) -> QLabel:
-    """Многострочная подсказка: переносится по ширине окна и не тянет окно вширь
-    (QLabel с wordWrap в QFormLayout иначе требует ширину под всю строку)."""
-    l = QLabel(text)
-    l.setWordWrap(True)
-    l.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-    l.setMinimumWidth(200)
-    if gray:
-        l.setStyleSheet("color: gray")
-    if rich:
-        l.setTextFormat(Qt.RichText); l.setOpenExternalLinks(True); l.setTextInteractionFlags(Qt.TextBrowserInteraction)
-    return l
+    """Подсказка в форме настроек: переносится и не тянет окно вширь (widgets.note с ignore_width)."""
+    return note(text, gray=gray, rich=rich, ignore_width=True)
 
 
 def _cell(text, editable: bool = True) -> QTableWidgetItem:
@@ -210,7 +202,7 @@ class FeedCheckWorker(QThread):
                 try:
                     ok, msg = f.result()
                 except Exception as e:  # noqa: BLE001
-                    ok, msg = False, f"{type(e).__name__}: {str(e)[:80]}"
+                    ok, msg = False, SY.err_text(e, 80)
                 self.one.emit(url, ok, msg)
         self.done.emit()
 
@@ -229,7 +221,7 @@ class ModelsWorker(QThread):
             models, src = AI.fetch_openrouter_models(self.cache_dir, self.proxy, force=self.force)
             self.done.emit(models, src)
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {str(e)[:150]}")
+            self.failed.emit(SY.err_text(e, 150))
 
 
 class AutoHeightLabel(QLabel):
@@ -286,7 +278,7 @@ class CheckWorker(QThread):
         try:
             self.done.emit(AI.check_model(c.provider, c.key, c.model, c.proxy, c.base_url, cache_dir=self.cache_dir))
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
+            self.failed.emit(SY.err_text(e, 200))
 
 
 class ModelPicker(QWidget):
@@ -906,9 +898,7 @@ class SettingsDialog(QDialog):
         QTimer.singleShot(0, start_check)
 
         def cleanup() -> None:
-            wk = getattr(dlg, "worker", None)
-            if wk is not None and wk.isRunning():
-                wk.requestInterruption(); wk.wait(3000)
+            stop_workers([getattr(dlg, "worker", None)], 3000)
         dlg.finished.connect(lambda _: cleanup())
         if dlg.exec() != QDialog.Accepted:
             return
@@ -932,7 +922,7 @@ class SettingsDialog(QDialog):
     def _feeds_check(self) -> None:
         """Проверить каждый источник — в фоне (FeedCheckWorker), ✓/✗ в колонку «Статус» по мере ответов.
         Раньше проверка шла в UI-потоке через processEvents — окно замирало на медленных лентах (правило 4)."""
-        if getattr(self, "_feeds_worker", None) is not None and self._feeds_worker.isRunning():
+        if is_running(getattr(self, "_feeds_worker", None)):
             return
         rows = {}
         for r in range(self.t_feeds.rowCount()):
@@ -1072,7 +1062,7 @@ class SettingsDialog(QDialog):
         import paths
         if not hasattr(self, "lbl_ai_test"):
             return
-        r = AI.last_check(self.ai_provider_key(), self.ai_model.text().strip(), paths.data_dir() / "cache")
+        r = AI.last_check(self.ai_provider_key(), self.ai_model.text().strip(), paths.cache_dir())
         self.lbl_ai_test.setText(AI.describe_check(r) if r else "")
 
     def _ai_tier_info(self) -> None:
@@ -1097,7 +1087,7 @@ class SettingsDialog(QDialog):
             elif info.get("free_tier") is False:
                 tier = " <b>На аккаунте покупались кредиты: до 1000 бесплатных запросов в сутки.</b>"
             self.lbl_ai_tier.setText(base + tier + block)
-        if getattr(self, "_tier_worker", None) is not None and self._tier_worker.isRunning():
+        if is_running(getattr(self, "_tier_worker", None)):
             return
         self._tier_worker = TierWorker(key, self.ai_proxy.text().strip())
         self._tier_worker.done.connect(show); self._tier_worker.start()
@@ -1105,10 +1095,10 @@ class SettingsDialog(QDialog):
     def _load_models(self, force: bool) -> None:
         """Каталог OpenRouter — в фоне; из кэша (сутки) мгновенно."""
         import paths
-        if getattr(self, "_models_worker", None) is not None and self._models_worker.isRunning():
+        if is_running(getattr(self, "_models_worker", None)):
             return
         self.ai_model.lbl.setText("загружаю каталог моделей…")
-        self._models_worker = ModelsWorker(paths.data_dir() / "cache", self.ai_proxy.text().strip(), force)
+        self._models_worker = ModelsWorker(paths.cache_dir(), self.ai_proxy.text().strip(), force)
         self._models_worker.done.connect(lambda ms, src: self.ai_model.set_models(ms, f"каталог: {src}"))
         self._models_worker.failed.connect(lambda m: self.ai_model.lbl.setText(f"каталог не загружен ({m}) — впиши id вручную"))
         self._models_worker.start()
@@ -1141,12 +1131,12 @@ class SettingsDialog(QDialog):
         p = self.ai_provider_key(); key = self._ai_key()
         if not key:
             self.lbl_ai_test.setText("Сначала задай ключ."); return
-        if getattr(self, "_check_worker", None) is not None and self._check_worker.isRunning():
+        if is_running(getattr(self, "_check_worker", None)):
             return
         self.lbl_ai_test.setText("Проверяю модель (один запрос)…"); self.b_ai_test.setEnabled(False)
         import ai as AI
         conf = AI.AIConfig(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(), self.ai_url.text().strip())
-        self._check_worker = CheckWorker(conf, paths.data_dir() / "cache", self)
+        self._check_worker = CheckWorker(conf, paths.cache_dir(), self)
 
         def done(r):
             import ai as AI
@@ -1331,9 +1321,7 @@ class SettingsDialog(QDialog):
 
     def closeEvent(self, event) -> None:
         for name, ms in (("_models_worker", 3000), ("_tier_worker", 3000), ("_check_worker", 60000), ("_feeds_worker", 15000)):
-            wk = getattr(self, name, None)
-            if wk is not None and wk.isRunning():
-                wk.wait(ms)                # дожидаемся, чтобы не уничтожить живой поток (SIGABRT)
+            stop_workers([getattr(self, name, None)], ms, interrupt=False)   # не уничтожать живой поток (SIGABRT)
         # На закрытие — дописать то, что ещё не ушло по таймеру
         if self._timer.isActive():
             self._timer.stop()

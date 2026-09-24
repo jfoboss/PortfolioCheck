@@ -18,6 +18,7 @@ import re
 import urllib.error
 import urllib.request
 
+import jsoncache as JC
 import net
 import style as SY
 from dataclasses import dataclass, field, asdict
@@ -598,8 +599,7 @@ class ResponseCache:
 
     def put(self, key: str, fp: str, data: dict, structural: str = "") -> None:
         self.data[key] = {"at": datetime.now().isoformat(timespec="minutes"), "fp": fp, "data": data, "structural": structural}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
+        JC.write(self.path, self.data)
 
 
 def subjects_fingerprint(positions, candidates=None) -> str:

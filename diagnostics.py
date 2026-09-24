@@ -17,6 +17,8 @@ from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from osutil import SECRET_STORE, mono_font
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QDialog
+from widgets import is_running, stop_workers
+import style as SY
 
 APP_VERSION = "1.5"
 LOG_NAME = "portfolio-check.log"
@@ -101,7 +103,7 @@ class ConnectivityWorker(QThread):
                 self.line.emit(f"✓ {name}: ок{(' — ' + extra) if extra else ''} ({time.time() - t:.1f}с)")
                 log.info("check %s: ok %s", name, extra or "")
             except Exception as e:  # noqa: BLE001
-                msg = f"{type(e).__name__}: {str(e)[:200]}"
+                msg = SY.err_text(e, 200)
                 self.line.emit(f"✗ {name}: {msg}")
                 log.error("check %s: %s", name, msg)
 
@@ -111,8 +113,7 @@ class ConnectivityWorker(QThread):
 
         def api():
             import portfolio_check as pc
-            Client, *_ = pc._sdk(); pc._setup_grpc_roots()
-            with Client(self.token) as c:
+            with pc.connect(self.token) as c:
                 accs = c.users.get_accounts().accounts
                 return f"счетов: {len(accs)}"
         if self.token:
@@ -149,8 +150,7 @@ class ConnectivityWorker(QThread):
         def fundamentals():
             import portfolio_check as pc
             from tinkoff.invest.schemas import GetAssetFundamentalsRequest, InstrumentStatus
-            Client, *_ = pc._sdk(); pc._setup_grpc_roots()
-            with Client(self.token) as c:
+            with pc.connect(self.token) as c:
                 shares = [s for s in c.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE).instruments if s.class_code == "TQBR"]
                 sber = next((s for s in shares if s.ticker == "SBER"), shares[0])
                 f = c.instruments.get_asset_fundamentals(GetAssetFundamentalsRequest(assets=[sber.asset_uid])).fundamentals
@@ -209,7 +209,7 @@ class AboutTab(QWidget):
         self.txt.verticalScrollBar().setValue(self.txt.verticalScrollBar().maximum())
 
     def run_checks(self) -> None:
-        if getattr(self, "worker", None) is not None and self.worker.isRunning():
+        if is_running(getattr(self, "worker", None)):
             return
         log.info("--- проверка подключений ---")
         self.txt.appendPlainText(f"\n--- проверка подключений {datetime.now():%H:%M:%S} ---")
@@ -252,7 +252,5 @@ class AboutWindow(QDialog):
         super().showEvent(e)
 
     def closeEvent(self, e) -> None:
-        wk = getattr(self.tab, "worker", None)
-        if wk is not None and wk.isRunning():     # проверка подключений — не уничтожать живой поток
-            wk.wait(15000)
+        stop_workers([getattr(self.tab, "worker", None)], 15000, interrupt=False)   # не уничтожать живой поток
         super().closeEvent(e)

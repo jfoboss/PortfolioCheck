@@ -15,6 +15,7 @@ from diagnostics import log
 from ui_common import get_token
 from workers import HistoryWorker, LongHistoryWorker
 import style as SY
+from widgets import is_running
 
 
 class HistoryMixin:
@@ -24,9 +25,9 @@ class HistoryMixin:
         token = get_token()
         if not token or not self.bundle_path().exists() or not self.positions:
             self.pipeline_step("history", "новости"); self.refresh_news(); return
-        if getattr(self, "hist_worker", None) is not None and self.hist_worker.isRunning():
+        if is_running(getattr(self, "hist_worker", None)):
             return
-        self.hist_worker = HistoryWorker(token, self.cfg, self.positions, paths.data_dir() / "cache")
+        self.hist_worker = HistoryWorker(token, self.cfg, self.positions, paths.cache_dir())
         self.hist_worker.done.connect(self._on_history)
         self.hist_worker.failed.connect(lambda m: (log.error("история/свечи: %s", m), self.set_status(f"История не загружена: {m[:100]}"),
                                                    self.pipeline_step("history", "новости"), self.refresh_news()))
@@ -98,7 +99,7 @@ class HistoryMixin:
 
     def long_growth_from_cache(self, years: float) -> tuple[dict, float, int]:
         """CAGR по позициям из уже сохранённых свечей — мгновенно, без сети."""
-        cache_dir = paths.data_dir() / "cache"
+        cache_dir = paths.cache_dir()
         vals, covered, missing = {}, [], 0
         for p in self.positions:
             if not p.figi:
@@ -129,10 +130,10 @@ class HistoryMixin:
         token = get_token()
         if not token or not self.positions:
             self.set_status("Для средней за несколько лет нужны токен и загруженный портфель."); return
-        if getattr(self, "long_worker", None) is not None and self.long_worker.isRunning():
+        if is_running(getattr(self, "long_worker", None)):
             return
         self.set_status(f"Загружаю историю за {years:.0f} г…")
-        self.long_worker = LongHistoryWorker(token, self.cfg, self.positions, paths.data_dir() / "cache", years)
+        self.long_worker = LongHistoryWorker(token, self.cfg, self.positions, paths.cache_dir(), years)
         self.long_worker.progress.connect(self.set_status)
         self.long_worker.done.connect(lambda r: self._on_long_history(r, years))
         self.long_worker.failed.connect(lambda m: (log.error("длинная история: %s", m), self.set_status(f"История не загружена: {m[:100]}")))

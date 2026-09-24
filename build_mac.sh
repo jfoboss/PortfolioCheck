@@ -60,6 +60,7 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --add-data "docs:docs" \
   --hidden-import net \
   --hidden-import style \
+  --hidden-import jsoncache \
   --hidden-import truststore \
   --hidden-import certifi \
   --hidden-import portfolio_check \

@@ -15,7 +15,7 @@ import payouts as PO
 from charts import BarChart
 from diagnostics import log
 from ui_common import MASK, TINT_WARN
-from widgets import icon_column, scroll_wrap
+from widgets import icon_column, note, scroll_wrap
 import style as SY
 
 STATUS = {"declared": "✔", "expected": "≈", "paid": "✓"}                 # значок в ячейке; слово — в подсказке
@@ -33,10 +33,9 @@ class PayoutsMixin:
                                         "Кол-во", "Сумма, ₽", "Ст."])
         self.tbl_payouts.horizontalHeaderItem(2).setToolTip("Последний торговый день, когда покупка ещё даёт право на выплату")
         self.tbl_cand_div = self._table(["Кандидат", "Тикер", "Экс-дивиденд", "Дней", "Дивдоходность", "Дивиденды, ₽"])
-        self.lbl_payouts_note = QLabel("Суммы — после НДФЛ 13%. ✔ — объявлена; ≈ — ожидается: выплата прошлого года, сдвинутая на год, эмитент её "
+        self.lbl_payouts_note = note("Суммы — после НДФЛ 13%. ✔ — объявлена; ≈ — ожидается: выплата прошлого года, сдвинутая на год, эмитент её "
                                        "ещё не объявил, сумма и дата могут измениться; ✓ — уже была. Последний день покупки — последний "
                                        "торговый день, когда покупка ещё даёт право на выплату.")
-        self.lbl_payouts_note.setWordWrap(True); self.lbl_payouts_note.setStyleSheet("color: gray")
 
         # календарь читается по дате: таблица — по отсечке, кандидаты — по числу дней (уже упорядочены)
         self.tbl_payouts.sortByColumn(3, Qt.AscendingOrder)
@@ -69,12 +68,12 @@ class PayoutsMixin:
     # ---- данные ------------------------------------------------------------
 
     def load_payouts_from_disk(self) -> None:
-        items, at = PO.load(paths.data_dir() / "cache")
+        items, at = PO.load(paths.cache_dir())
         self.payouts, self._payouts_at = items, at
         self.render_payouts()
 
     def load_macro_calendar(self) -> None:
-        self.macro_events = macro.load_calendar(paths.data_dir() / "cache")
+        self.macro_events = macro.load_calendar(paths.cache_dir())
         self.render_payouts()
 
     def set_payouts(self, raw: list) -> None:
@@ -82,7 +81,7 @@ class PayoutsMixin:
         self.payouts = PO.with_expected(raw)
         self._payouts_at = ""
         try:
-            PO.save(self.payouts, paths.data_dir() / "cache")
+            PO.save(self.payouts, paths.cache_dir())
         except OSError as e:
             log.warning("календарь выплат не сохранён: %s", e)
         self.render_payouts()

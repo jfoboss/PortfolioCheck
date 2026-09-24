@@ -17,7 +17,7 @@ import scenarios as SC
 from charts import DivergingBarChart
 from diagnostics import log
 import style as SY
-from widgets import scroll_wrap
+from widgets import scroll_wrap, is_running
 from workers import FactorsWorker
 
 
@@ -60,11 +60,11 @@ class ScenariosMixin:
 
     def start_factors(self) -> None:
         """Догрузить индекс и доллар (кэш старше суток) и календарь ЦБ (старше недели). В демо — не ходим в сеть."""
-        cache = paths.data_dir() / "cache"
+        cache = paths.cache_dir()
         if paths.DEMO_DIR is not None or (FA.fresh(cache, FA.IMOEX) and FA.fresh(cache, FA.USDRUB)
                                           and macro.calendar_fresh(cache)):
             return
-        if getattr(self, "factors_worker", None) is not None and self.factors_worker.isRunning():
+        if is_running(getattr(self, "factors_worker", None)):
             return
         self.factors_worker = FactorsWorker(cache)
         self.factors_worker.done.connect(self._on_factors)
@@ -80,7 +80,7 @@ class ScenariosMixin:
         self.check_alerts()
 
     def _scenario_betas(self):
-        cache = paths.data_dir() / "cache"
+        cache = paths.cache_dir()
         files = [cache / f"candles_{x}.json" for x in [p.figi for p in self.positions if p.figi] + [FA.IMOEX, FA.USDRUB]]
         key = (tuple((p.ticker, float(p.value_rub)) for p in self.positions),
                max((f.stat().st_mtime for f in files if f.exists()), default=0))

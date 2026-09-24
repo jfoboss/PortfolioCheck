@@ -15,12 +15,12 @@ macro.py — макроданные с сайта ЦБ РФ: годовая ин
 from __future__ import annotations
 
 import html as _html
-import json
 import re
-import time
 from datetime import date
 from dataclasses import asdict, dataclass
 from pathlib import Path
+import style as SY
+import jsoncache as JC
 
 CBR_URL = "https://www.cbr.ru/hd_base/infl/"
 CAL_URL = "https://www.cbr.ru/dkp/cal_mp/"
@@ -95,20 +95,17 @@ def parse_cbr_calendar(page: str) -> list[MacroEvent]:
 
 def load_calendar(cache_dir: Path) -> list[MacroEvent]:
     try:
-        return [MacroEvent(**x) for x in json.loads((cache_dir / CAL_FILE).read_text(encoding="utf-8"))["events"]]
-    except Exception:  # noqa: BLE001
+        return [MacroEvent(**x) for x in (JC.read(cache_dir / CAL_FILE) or {}).get("events", [])]
+    except TypeError:
         return []
 
 
 def calendar_fresh(cache_dir: Path) -> bool:
-    f = cache_dir / CAL_FILE
-    return f.exists() and time.time() - f.stat().st_mtime < CAL_MAX_AGE_S
+    return JC.fresh(cache_dir / CAL_FILE, CAL_MAX_AGE_S)
 
 
 def save_calendar(events: list[MacroEvent], cache_dir: Path) -> None:
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / CAL_FILE).write_text(json.dumps({"events": [asdict(e) for e in events]}, ensure_ascii=False),
-                                      encoding="utf-8")
+    JC.write(cache_dir / CAL_FILE, {"events": [asdict(e) for e in events]})
 
 
 def fetch_calendar(cache_dir: Path, fetch=None) -> str:
@@ -122,7 +119,7 @@ def fetch_calendar(cache_dir: Path, fetch=None) -> str:
         save_calendar(parse_cbr_calendar(fetch(CAL_URL).decode("utf-8", "replace")), cache_dir)
         return "ok"
     except Exception as e:  # noqa: BLE001
-        return f"{type(e).__name__}: {str(e)[:120]}"
+        return SY.err_text(e, 120)
 
 
 def upcoming(events: list[MacroEvent], today: date, days: int = 190) -> list[MacroEvent]:

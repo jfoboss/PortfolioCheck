@@ -14,6 +14,7 @@ import news as NEWS
 import screener as SCR
 from ui_common import TINT_WARN, get_token
 from workers import IdeasEnrichWorker, ScreenerWorker
+from widgets import is_running
 
 
 class IdeasMixin:
@@ -80,9 +81,9 @@ class IdeasMixin:
             self.lbl_ideas.setText(self.lbl_ideas.text() + " <span style='color:gray'>Изменение за месяц появится после "
                                                            "свежего прохода — нажми «Найти».</span>")
             return
-        if getattr(self, "ideas_worker", None) is not None and self.ideas_worker.isRunning():
+        if is_running(getattr(self, "ideas_worker", None)):
             return
-        self.ideas_worker = IdeasEnrichWorker(token, ideas, paths.data_dir() / "cache")
+        self.ideas_worker = IdeasEnrichWorker(token, ideas, paths.cache_dir())
         self.ideas_worker.done.connect(self._on_ideas_enriched)
         self.ideas_worker.failed.connect(lambda m: log.warning("свечи кандидатов: %s", m))
         self.ideas_worker.start()
@@ -123,11 +124,11 @@ class IdeasMixin:
         self._on_ideas(res)
 
     def run_screener(self, auto: bool = False) -> None:
-        if getattr(self, "scr_worker", None) is not None and self.scr_worker.isRunning():
+        if is_running(getattr(self, "scr_worker", None)):
             return
         if auto:
             # свежий кэш (сутки) отдаём сразу, без похода в сеть
-            cached = SCR.load_cached(paths.data_dir() / "cache", self._screener_filters(), self._screener_exclude(), max_age_h=24)
+            cached = SCR.load_cached(paths.cache_dir(), self._screener_filters(), self._screener_exclude(), max_age_h=24)
             if cached is not None:
                 self._on_ideas(cached); return
         exclude = self._screener_exclude()
@@ -136,7 +137,7 @@ class IdeasMixin:
         if not token:
             self.lbl_ideas.setText("Скринер работает через T-Invest API — нужен токен (Настройки → Доступ)."); self.pipeline_step("ideas", None); return
         self.scr_worker = ScreenerWorker(token, self.sp_min_yield.value(), float(self.sp_min_cap.value()), self.sp_max_debt.value(),
-                                         exclude, paths.data_dir() / "cache", force=not auto)
+                                         exclude, paths.cache_dir(), force=not auto)
         self.scr_worker.filters = self._screener_filters()
         self.scr_worker.progress.connect(self.set_status)
         self.scr_worker.done.connect(self._on_ideas)

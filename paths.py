@@ -94,6 +94,11 @@ def data_dir() -> Path:
     return d
 
 
+def cache_dir() -> Path:
+    """Кэши (свечи, новости, скринер, сводки ИИ, календари) — внутри папки данных, переезжают вместе с ней."""
+    return data_dir() / "cache"
+
+
 def set_data_dir(new_dir: Path, move_files: bool = True) -> Path:
     """Сменить папку данных; при move_files перенести туда текущие файлы (если в новой их ещё нет)."""
     if DEMO_DIR is not None:

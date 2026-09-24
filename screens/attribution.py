@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidg
 import attribution as AT
 import portfolio_check as pc
 from charts import DivergingBarChart
-from widgets import scroll_wrap
+from widgets import scroll_wrap, note
 import style as SY
 
 
@@ -25,7 +25,7 @@ class AttributionMixin:
         self.lbl_attr = QLabel(); self.lbl_attr.setWordWrap(True)
         self.chart_attr = DivergingBarChart("Переоценка по классам, ₽", left_label="минус ←", right_label="→ плюс",
                                             empty_text="нужно минимум два снапшота")
-        self.lbl_attr_top = QLabel(); self.lbl_attr_top.setWordWrap(True); self.lbl_attr_top.setStyleSheet("color: gray")
+        self.lbl_attr_top = note()
         lay.addLayout(top); lay.addWidget(self.lbl_attr); lay.addWidget(self.chart_attr, 1); lay.addWidget(self.lbl_attr_top)
         return scroll_wrap(w)                                   # текст + бары: на низком окне — прокрутка, не наложение
 

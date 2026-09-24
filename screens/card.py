@@ -21,6 +21,7 @@ import portfolio_check as pc
 import style as SY
 from charts import LineChart
 from ui_common import MASK
+from widgets import is_running, stop_workers
 
 PERIOD_LABELS = {"day": "день", "week": "неделя", "month": "месяц", "year": "год"}
 
@@ -30,7 +31,7 @@ def card_data(win, ticker: str) -> dict:
     pos = next((p for p in win.positions if p.ticker == ticker), None)
     res = getattr(win, "_last_screen", None)
     idea = next((i for i in (getattr(res, "all_ideas", None) or getattr(res, "ideas", None) or []) if i.ticker == ticker), None)
-    cache = paths.data_dir() / "cache"
+    cache = paths.cache_dir()
     key = (pos.figi if pos and pos.figi else "") or (getattr(idea, "uid", "") if idea else "")
     series = H.load_cached(cache, key) if key else []
     cur = float(pos.cur_price) if pos else (float(idea.price) if idea else (series[-1][1] if series else 0.0))
@@ -178,7 +179,7 @@ class SecurityCard(QDialog):
         uid = self._forecast_uid(d)
         if not uid or uid.startswith("demo-") or paths.DEMO_DIR is not None:
             return []
-        cache = paths.data_dir() / "cache"
+        cache = paths.cache_dir()
         data = getattr(self, "_forecast", None) or CS.load(cache, uid)
         if data is None:
             self._start_forecast(uid, cache)
@@ -204,16 +205,14 @@ class SecurityCard(QDialog):
         from ui_common import get_token
         from workers import ForecastWorker
         token = get_token()
-        if not token or (getattr(self, "_fw", None) is not None and self._fw.isRunning()):
+        if not token or is_running(getattr(self, "_fw", None)):
             return
         self._fw = ForecastWorker(token, uid, cache, self)
         self._fw.done.connect(lambda data: (setattr(self, "_forecast", data), self.refresh()))
         self._fw.start()
 
     def closeEvent(self, e) -> None:
-        fw = getattr(self, "_fw", None)
-        if fw is not None and fw.isRunning():
-            fw.wait(15000)                           # не уничтожать живой поток (SIGABRT)
+        stop_workers([getattr(self, "_fw", None)], 15000, interrupt=False)     # не уничтожать живой поток (SIGABRT)
         super().closeEvent(e)
 
     def _open_news(self, r: int, _c: int) -> None:

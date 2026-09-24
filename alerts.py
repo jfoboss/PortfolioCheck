@@ -16,10 +16,11 @@ alerts.py — оповещения-условия (BACKLOG п. 21, аналог 
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+
+import jsoncache as JC
 
 KINDS = {
     "price_above": "Цена ≥",
@@ -110,15 +111,10 @@ def new_hits(hits: list[Hit], cache_dir: Path) -> list[Hit]:
     """Только те, что появились с прошлой проверки. Состояние — множество выполненных сейчас ключей: условие, которое
     перестало выполняться, снова «взводится» и сообщит при следующем выполнении."""
     f = cache_dir / STATE_FILE
-    try:
-        prev = set(json.loads(f.read_text(encoding="utf-8")).get("active", []))
-    except Exception:  # noqa: BLE001
-        prev = set()
+    prev = set((JC.read(f) or {}).get("active", []))
     cur = {h.key for h in hits}
     try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps({"active": sorted(cur), "at": datetime.now().isoformat(timespec="seconds")},
-                                ensure_ascii=False), encoding="utf-8")
+        JC.write(f, {"active": sorted(cur), "at": datetime.now().isoformat(timespec="seconds")})
     except OSError:
         pass
     return [h for h in hits if h.key not in prev]

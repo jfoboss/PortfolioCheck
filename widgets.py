@@ -132,3 +132,37 @@ def icon_column(table, col: int, legend: dict) -> None:
     hdr = table.horizontalHeaderItem(col)
     if hdr is not None:
         hdr.setToolTip(" · ".join(f"{s} — {t}" for s, (t, _) in legend.items()))
+
+
+def is_running(worker) -> bool:
+    """Воркер существует и ещё работает — проверка «не запускать второй раз»."""
+    return worker is not None and worker.isRunning()
+
+
+def note(text: str = "", gray: bool = True, rich: bool = False, ignore_width: bool = False):
+    """Поясняющая подпись: переносится по словам, серая. rich — HTML со ссылками. ignore_width — не тянет окно
+    вширь (для форм настроек: QLabel с переносом в QFormLayout иначе просит ширину под всю строку)."""
+    from PySide6.QtWidgets import QLabel, QSizePolicy
+    lbl = QLabel(text); lbl.setWordWrap(True)
+    if ignore_width:
+        lbl.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred); lbl.setMinimumWidth(200)
+    if gray:
+        lbl.setStyleSheet("color: gray")
+    if rich:
+        lbl.setTextFormat(Qt.RichText); lbl.setOpenExternalLinks(True); lbl.setTextInteractionFlags(Qt.TextBrowserInteraction)
+    return lbl
+
+
+def stop_workers(workers, ms: int = 8000, interrupt: bool = True, terminate: bool = False) -> None:
+    """Остановить фоновые потоки перед уничтожением окна: Qt вызывает abort() (SIGABRT), если QThread ещё жив.
+    interrupt — сначала попросить (воркеры проверяют флаг между запросами); terminate — крайняя мера по таймауту."""
+    import logging
+    alive = [w for w in workers if is_running(w)]
+    if interrupt:
+        for w in alive:
+            w.requestInterruption()
+    for w in alive:
+        if not w.wait(ms) and terminate:
+            logging.getLogger("portfolio").warning("поток %s не остановился за %d мс — завершаю принудительно",
+                                                   type(w).__name__, ms)
+            w.terminate(); w.wait(2000)

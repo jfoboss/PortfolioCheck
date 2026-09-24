@@ -7,7 +7,6 @@ news.py — лента новостей по позициям из RSS-исто�
 
 from __future__ import annotations
 
-import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -16,6 +15,8 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import net                         # сеть к сайтам — net.fetch (корни ОС)
+import style as SY
+import jsoncache as JC
 
 DEFAULT_FEEDS = [
     "https://www.interfax.ru/rss.asp",
@@ -80,7 +81,7 @@ def check_feed(url: str, ca_bundle: Path | None = None) -> tuple[bool, str]:
         items = parse_feed(data, url)
         return (True, f"{len(items)} новостей") if items else (False, "нет элементов <item>")
     except Exception as e:  # noqa: BLE001
-        return False, f"{type(e).__name__}: {str(e)[:80]}"
+        return False, SY.err_text(e, 80)
 
 # Алиасы для поиска: тикер → слова, по которым узнаётся компания в заголовках
 DEFAULT_ALIASES = {
@@ -244,18 +245,18 @@ def fetch_news(feeds: list[str], positions, aliases: dict[str, list[str]], ca_bu
 
 
 def save_cache(items: list[NewsItem], cache_dir: Path) -> None:
-    cache_dir.mkdir(parents=True, exist_ok=True)
     rows = [{"title": i.title, "link": i.link, "source": i.source, "published": i.published.isoformat() if i.published else None,
              "matched": i.matched, "summary": i.summary} for i in items[:300]]
-    (cache_dir / "news.json").write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+    JC.write(cache_dir / "news.json", rows)
 
 
 def load_cache(cache_dir: Path) -> list[NewsItem]:
-    f = cache_dir / "news.json"
-    if not f.exists():
-        return []
+    """Лента с диска; битый файл — пустая лента (раньше исключение роняло загрузку при старте)."""
     out = []
-    for r in json.loads(f.read_text(encoding="utf-8")):
-        pub = datetime.fromisoformat(r["published"]) if r.get("published") else None
-        out.append(NewsItem(r["title"], r["link"], r["source"], pub, r.get("matched", []), r.get("summary", "")))
+    for r in JC.read(cache_dir / "news.json", []) or []:
+        try:
+            pub = datetime.fromisoformat(r["published"]) if r.get("published") else None
+            out.append(NewsItem(r["title"], r["link"], r["source"], pub, r.get("matched", []), r.get("summary", "")))
+        except (KeyError, TypeError, ValueError):
+            continue
     return out

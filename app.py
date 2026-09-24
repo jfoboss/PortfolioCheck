@@ -46,7 +46,7 @@ import config_migrate as CM
 from osutil import native_keys, IS_MAC
 
 from ui_common import APP_NAME, get_token, ensure_config
-from widgets import BusySpinner, scroll_wrap
+from widgets import BusySpinner, is_running, note, scroll_wrap, stop_workers
 from workers import FairPriceWorker, LoadWorker
 from screens.history import HistoryMixin
 from screens.news import NewsMixin
@@ -115,7 +115,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                 "(или перезапустить приложение).",
                 "Открыть настройки доступа" if IS_MAC else "",
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" if IS_MAC else "", retry=True)
-        AI.CATALOG_DIR = paths.data_dir() / "cache"   # модель по умолчанию для OpenRouter — из живого каталога
+        AI.CATALOG_DIR = paths.cache_dir()   # модель по умолчанию для OpenRouter — из живого каталога
         AI.load_rate_block()                           # дневной лимит, пойманный до перезапуска, ещё действует
         self.restore_layout()                      # размер окна, положение разделителей, активный экран
         if self.needs_setup():
@@ -279,18 +279,17 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.treemap_small = TreemapChart(); self.treemap_small.setMinimumHeight(110)
         self.lbl_heat = QLabel(); self.lbl_heat.setStyleSheet("color: gray")
         self.chart_history = LineChart("Стоимость портфеля", "₽", zero_based=False)
-        self.lbl_history = QLabel(); self.lbl_history.setWordWrap(True); self.lbl_history.setStyleSheet("color: gray")
+        self.lbl_history = note()
         self.news_tbl = self._news_table(); self.news_tbl_small = self._news_table()
-        self.lbl_news = QLabel(); self.lbl_news.setWordWrap(True); self.lbl_news.setStyleSheet("color: gray")
+        self.lbl_news = note()
         self.tbl_ideas = self._table(["Компания", "Тикер", "Отрасль", "Мес.", "Новости", "Цена", "Кап., млрд", "Дивдоходность",
                                       "Дивдох. 5 лет", "Дивиденды, ₽", "P/E", "Долг/EBITDA", "ROE", "Free float", "Экс-дивиденд"])
         self.tbl_ideas.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tbl_ideas.customContextMenuRequested.connect(self._ideas_menu)
         self.btn_blacklist = QPushButton("Исключить"); self.btn_blacklist.clicked.connect(self.blacklist_selected)
         self.btn_blacklist.setToolTip("В чёрный список скринера с причиной (Настройки → Скринер)")
-        self.lbl_ideas = QLabel("Скринер ещё не запускался — он идёт последним шагом фоновой загрузки (проход по T-Invest занимает ~10–20 секунд). "
+        self.lbl_ideas = note("Скринер ещё не запускался — он идёт последним шагом фоновой загрузки (проход по T-Invest занимает ~10–20 секунд). "
                                 "Или нажми «Найти кандидатов».")
-        self.lbl_ideas.setWordWrap(True); self.lbl_ideas.setStyleSheet("color: gray")
 
         # период тепловой карты
         self.heat_group = QButtonGroup(self)
@@ -490,13 +489,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         """Сохранить размеры окна и остановить фоновые потоки (Qt при живом QThread вызывает abort())."""
         self.save_layout()
         self.auto_timer.stop()
-        running = [getattr(self, n) for n in self.WORKERS if getattr(self, n, None) is not None and getattr(self, n).isRunning()]
-        for wk in running:
-            wk.requestInterruption()          # воркеры проверяют флаг между запросами
-        for wk in running:
-            if not wk.wait(8000):
-                log.warning("поток %s не остановился за 8 с — завершаю принудительно", type(wk).__name__)
-                wk.terminate(); wk.wait(2000)
+        stop_workers([getattr(self, n, None) for n in self.WORKERS], 8000, terminate=True)
         if self.settings_win is not None:
             self.settings_win.close()
         if getattr(self, "about_win", None) is not None:
@@ -625,7 +618,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
             log.error("снапшот %s не прочитан: %s", f, e); return
         self._reclassify(); pc.apply_blocked_flags(self.positions, self.cfg); pc.fill_fair_prices_local(self.positions, self.cfg)
         # свечи из кэша → доходности по периодам и история, без API
-        cache_dir = paths.data_dir() / "cache"
+        cache_dir = paths.cache_dir()
         candles = {p.figi: H.load_cached(cache_dir, p.figi) for p in self.positions if p.figi}
         candles = {k: v for k, v in candles.items() if v}
         if candles:
@@ -749,7 +742,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         token = get_token()
         if not token or not self.bundle_path().exists():
             return
-        if getattr(self, "fair_worker", None) is not None and self.fair_worker.isRunning():
+        if is_running(getattr(self, "fair_worker", None)):
             return
         self.set_status("Пересчитываю цены заблокированных…")
         self.fair_worker = FairPriceWorker(token, self.cfg, self.positions)

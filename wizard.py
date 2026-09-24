@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWizard, QWizardPage, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QButtonGroup, QFormLayout,
     QDoubleSpinBox, QSpinBox, QPushButton, QFileDialog, QMessageBox, QGridLayout,
@@ -13,14 +12,11 @@ from PySide6.QtWidgets import (
 import strategy as ST
 import style as SY
 from portfolio_check import CLASS_LABELS
+from widgets import note
 
 
 def _note(text: str, gray: bool = False) -> QLabel:
-    l = QLabel(text); l.setWordWrap(True); l.setTextFormat(Qt.RichText); l.setOpenExternalLinks(True)
-    l.setTextInteractionFlags(Qt.TextBrowserInteraction)
-    if gray:
-        l.setStyleSheet("color: gray")
-    return l
+    return note(text, gray=gray, rich=True)
 
 
 class SetupWizard(QWizard):

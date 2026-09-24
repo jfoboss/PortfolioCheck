@@ -59,3 +59,9 @@ def money_fn(mask: bool, signed: bool = False):
     if mask:
         return lambda v: MASK
     return (lambda v: f"{v:+,.0f}") if signed else (lambda v: f"{v:,.0f}")
+
+
+def err_text(e: BaseException, limit: int = 200) -> str:
+    """Ошибка для строки состояния и лога: «Тип: сообщение», обрезанное до limit символов."""
+    msg = str(e)
+    return f"{type(e).__name__}: {msg[:limit] if limit else msg}"

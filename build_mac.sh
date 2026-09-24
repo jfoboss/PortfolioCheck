@@ -20,14 +20,15 @@ pip install -q --upgrade pip
 bash ./setup_env.sh          # через bash — не зависит от бита исполняемости после копирования файлов
 
 # 3. Иконка: SVG → iconset → icns (iconutil есть в macOS). Версия — из кода, пока venv ещё активен.
-python make_icon.py
+python scripts/make_icon.py
 iconutil -c icns icon.iconset -o PortfolioCheck.icns
-VERSION="${VERSION:-$(python -c "import diagnostics; print(diagnostics.APP_VERSION)")}"
+VERSION="${VERSION:-$(PYTHONPATH=src python -c "import diagnostics; print(diagnostics.APP_VERSION)")}"
 
 # 4. Сборка.
 pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --icon PortfolioCheck.icns \
-  --add-data "icon.svg:." \
+  --paths src \
+  --add-data "src/icon.svg:." \
   --collect-all tinkoff \
   --hidden-import settings_dialog \
   --hidden-import forecast \
@@ -64,10 +65,10 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --hidden-import truststore \
   --hidden-import certifi \
   --hidden-import portfolio_check \
-  --add-data "config.yaml:." \
-  --add-data "demo_snapshot.json:." \
+  --add-data "src/config.yaml:." \
+  --add-data "src/demo_snapshot.json:." \
   --osx-bundle-identifier "${BUNDLE_ID:-io.github.portfoliocheck}" \
-  app.py
+  src/app.py
 
 # Служебные приложения Qt (Assistant, Designer, Linguist…) в бандле не нужны и ломают codesign
 # ("Too many levels of symbolic links") — вычищаем и подписываем сами (ad-hoc, для запуска на своих Mac).

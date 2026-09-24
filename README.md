@@ -92,7 +92,7 @@
 ```bash
 git clone https://github.com/jfoboss/PortfolioCheck.git && cd PortfolioCheck
 ./bootstrap_mac.sh            # Python 3.12 через Homebrew (если нужно), .venv, зависимости
-.venv/bin/python app.py       # запуск из исходников
+.venv/bin/python src/app.py   # запуск из исходников
 ./build_mac.sh                # dist/PortfolioCheck.app и dist/PortfolioCheck-<версия>.dmg
 ```
 
@@ -107,7 +107,7 @@ git clone https://github.com/jfoboss/PortfolioCheck.git; cd PortfolioCheck
 py -3.12 -m venv .venv
 .venv\Scripts\pip install --no-deps "git+https://github.com/RussianInvestments/invest-python.git"
 .venv\Scripts\pip install -r requirements.txt pillow
-.venv\Scripts\python app.py                      # запуск из исходников
+.venv\Scripts\python src\app.py                  # запуск из исходников
 .venv\Scripts\python build.py                    # dist\PortfolioCheck\PortfolioCheck.exe и dist\PortfolioCheck-windows.zip
 ```
 
@@ -117,7 +117,7 @@ py -3.12 -m venv .venv
 sudo apt install python3.12 python3.12-venv git libegl1 libxkbcommon-x11-0 libxcb-cursor0
 git clone https://github.com/jfoboss/PortfolioCheck.git && cd PortfolioCheck
 python3.12 -m venv .venv && source .venv/bin/activate && bash setup_env.sh
-python app.py                 # запуск из исходников
+python src/app.py             # запуск из исходников
 python build.py               # dist/PortfolioCheck/ и dist/PortfolioCheck-linux-x86_64.tar.gz
 ```
 
@@ -199,7 +199,9 @@ Python 3.12, PySide6 (Qt), [tinkoff-investments](https://github.com/RussianInves
 графики нарисованы на QPainter. Ядро (`portfolio_check.py`, `history.py`, `news.py`, `screener.py`, `ai.py`,
 `strategy.py`, `forecast.py`) не зависит от интерфейса и тестируется отдельно.
 
-| файл | что внутри |
+Исходники — в `src/` (в корне — README, скрипты сборки, `docs/`, `tests/`).
+
+| файл (в `src/`) | что внутри |
 |---|---|
 | `app.py`, `screens/`, `workers.py`, `widgets.py`, `ui_common.py` | главное окно, экраны, фоновые загрузки |
 | `portfolio_check.py` | загрузка портфеля из API, классы, правила, отчёт |
@@ -231,7 +233,7 @@ Python 3.12, PySide6 (Qt), [tinkoff-investments](https://github.com/RussianInves
 pip install -r requirements-dev.txt  # в активированном .venv
 python -m pytest                     # тесты: offscreen, без сети, на демо-данных; CI гоняет их на трёх ОС
 bash scripts/check_private.sh        # перед push: нет ли личных данных в исходниках (и какие картинки не просмотрены)
-python app.py --demo                 # вымышленный портфель без токена; настоящий профиль не трогается
+python src/app.py --demo             # вымышленный портфель без токена; настоящий профиль не трогается
 ```
 
 Документация для разработчика и агента (Claude Code): `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`,

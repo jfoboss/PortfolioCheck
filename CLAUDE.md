@@ -8,10 +8,11 @@
 - Окружение: macOS — `./bootstrap_mac.sh` (Python 3.12 через Homebrew, `.venv`, зависимости); Windows и Linux —
   venv + SDK с GitHub + `requirements.txt` (команды — README → «Сборка из исходников»); для тестов ещё
   `pip install -r requirements-dev.txt`
-- Запуск из исходников: `.venv/bin/python app.py`; на вымышленном портфеле без токена и без записи в настоящий
-  профиль — `.venv/bin/python app.py --demo` (для скриншотов и осмотра UI)
+- Исходники и ресурсы программы — в `src/` (в корне только то, что трогает человек: README, скрипты сборки, docs,
+  tests). Запуск: `.venv/bin/python src/app.py`; на вымышленном портфеле без токена и без записи в настоящий
+  профиль — `.venv/bin/python src/app.py --demo` (для скриншотов и осмотра UI)
 - Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`);
-  статическая проверка: `.venv/bin/python -m pyflakes *.py screens/*.py tests/*.py` — должна быть пустой (CI падает)
+  статическая проверка: `.venv/bin/python -m pyflakes src tests build.py scripts` — должна быть пустой (CI падает)
 - Сборка: macOS — `./build_mac.sh` → `.app` и `.dmg`; Windows и Linux — `python build.py` (на своей ОС) → zip /
   tar.gz. CI (`.github/workflows/ci.yml`): тесты на ubuntu/windows/macos, сборки всех трёх ОС и запуск собранной
   программы в демо. Релиз (GitHub → Releases → Publish с тегом `vX.Y`) — `release.yml` прикладывает dmg, zip, tar.gz
@@ -63,7 +64,7 @@
   одного сайта. T-Invest — свой бандл с корнем Минцифры; из того же бандла `net` доверяет Минцифры и для сайтов
   (только эти сертификаты, в систему ничего не ставится). Ленты бывают Atom.
 - **Новый график — с `need_height()`**, несколько графиков в колонке — в `widgets.scroll_wrap`: иначе на экране
-  ноутбука подписи налезают. Проверяй `app.py --demo` в окне ~1300×720 (тест в `test_demo.py`).
+  ноутбука подписи налезают. Проверяй `src/app.py --demo` в окне ~1300×720 (тест в `test_demo.py`).
 - **codesign — строго после правки Info.plist**, иначе Keychain отдаёт `SecAuthFailure` (см. `build_mac.sh`).
 
 ## Где что

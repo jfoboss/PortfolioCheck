@@ -1,15 +1,15 @@
 ---
 paths:
-  - "app.py"
-  - "settings_dialog.py"
-  - "wizard.py"
-  - "forecast.py"
-  - "charts.py"
-  - "diagnostics.py"
-  - "ui_common.py"
-  - "widgets.py"
-  - "workers.py"
-  - "screens/**"
+  - "src/app.py"
+  - "src/settings_dialog.py"
+  - "src/wizard.py"
+  - "src/forecast.py"
+  - "src/charts.py"
+  - "src/diagnostics.py"
+  - "src/ui_common.py"
+  - "src/widgets.py"
+  - "src/workers.py"
+  - "src/screens/**"
 ---
 # Интерфейс (PySide6)
 

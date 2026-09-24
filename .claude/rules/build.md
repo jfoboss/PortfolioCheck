@@ -4,11 +4,11 @@ paths:
   - "bootstrap_mac.sh"
   - "setup_env.sh"
   - "make_ca_bundle.sh"
-  - "make_icon.py"
-  - "secrets_store.py"
-  - "paths.py"
+  - "scripts/make_icon.py"
+  - "src/secrets_store.py"
+  - "src/paths.py"
   - "build.py"
-  - "osutil.py"
+  - "src/osutil.py"
   - ".github/workflows/*"
 ---
 # Сборка, секреты, хранилище

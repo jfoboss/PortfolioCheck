@@ -1,6 +1,6 @@
 ---
 paths:
-  - "ai.py"
+  - "src/ai.py"
   - "docs/CHATGPT_PROMPT.md"
 ---
 # ИИ-сводки

@@ -1,10 +1,10 @@
 ---
 paths:
-  - "portfolio_check.py"
-  - "history.py"
-  - "screener.py"
-  - "macro.py"
-  - "strategy.py"
+  - "src/portfolio_check.py"
+  - "src/history.py"
+  - "src/screener.py"
+  - "src/macro.py"
+  - "src/strategy.py"
 ---
 # Данные: T-Invest API, классы, расчёты
 

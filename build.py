@@ -5,7 +5,7 @@ build.py — сборка PortfolioCheck для Windows и Linux (macOS — ./bu
     Linux:    dist/PortfolioCheck/PortfolioCheck      → dist/PortfolioCheck-linux-x86_64.tar.gz
               (внутри — ярлык PortfolioCheck.desktop, иконка и install.sh для меню приложений)
 
-Запуск из корня репозитория в окружении с зависимостями (см. README → «Сборка из исходников»):
+Запуск из корня репозитория (исходники — в src/) в окружении с зависимостями (см. README → «Сборка из исходников»):
     python build.py            # сборка для текущей ОС
     python build.py --dry-run  # только показать аргументы PyInstaller
 
@@ -22,13 +22,14 @@ import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"                    # исходники и ресурсы программы; в корне — только то, что трогает человек
 _QAPP = None
 HIDDEN = ["settings_dialog", "forecast", "charts", "macro", "paths", "history", "news", "screener", "diagnostics", "ai",
           "secrets_store", "strategy", "config_migrate", "demo", "ui_common", "widgets", "workers", "osutil", "payouts", "attribution", "export", "risk", "alerts", "factors", "scenarios", "consensus", "net", "style", "jsoncache",
           "truststore", "certifi",
           "wizard", "portfolio_check"]
 KEYRING_BACKENDS = {"win32": ["keyring.backends.Windows"], "linux": ["keyring.backends.SecretService"]}
-DATA = ["icon.svg", "config.yaml", "demo_snapshot.json", "docs"]
+DATA = [("src/icon.svg", "."), ("src/config.yaml", "."), ("src/demo_snapshot.json", "."), ("docs", "docs")]
 IS_WIN = sys.platform.startswith("win")
 
 DESKTOP = """[Desktop Entry]
@@ -64,7 +65,7 @@ def render_icon(png: Path, size: int = 256) -> Path:
     global _QAPP
     _QAPP = QGuiApplication.instance() or QGuiApplication(["icon"])   # должен жить, пока рисует QPainter
     img = QImage(size, size, QImage.Format_ARGB32); img.fill(QColor(0, 0, 0, 0))
-    p = QPainter(img); p.setRenderHint(QPainter.Antialiasing); QSvgRenderer(str(ROOT / "icon.svg")).render(p); p.end()
+    p = QPainter(img); p.setRenderHint(QPainter.Antialiasing); QSvgRenderer(str(SRC / "icon.svg")).render(p); p.end()
     png.parent.mkdir(parents=True, exist_ok=True)
     img.save(str(png))
     return png
@@ -84,14 +85,14 @@ def make_ico(out: Path) -> Path | None:
 
 def pyinstaller_args(target: str, icon: Path | None) -> list[str]:
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--windowed", "--name", "PortfolioCheck",
-            "--collect-all", "tinkoff", "--collect-submodules", "screens"]
+            "--paths", str(SRC), "--collect-all", "tinkoff", "--collect-submodules", "screens"]
     if icon:
         args += ["--icon", str(icon)]
     for m in HIDDEN + KEYRING_BACKENDS.get(target, []):
         args += ["--hidden-import", m]
-    for d in DATA:
-        args += ["--add-data", f"{d}{os.pathsep}{d if (ROOT / d).is_dir() else '.'}"]
-    return args + ["app.py"]
+    for src, dest in DATA:
+        args += ["--add-data", f"{src}{os.pathsep}{dest}"]
+    return args + [str(SRC / "app.py")]
 
 
 def package_linux() -> Path:

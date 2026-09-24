@@ -225,7 +225,7 @@ def chatgpt_prompt() -> str:
     """Текст промпта для ChatGPT (часть после линии «---» в docs/CHATGPT_PROMPT.md). Работает и в собранном .app."""
     import sys
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-    for cand in (base / "docs" / "CHATGPT_PROMPT.md", Path(__file__).parent / "docs" / "CHATGPT_PROMPT.md"):
+    for cand in (base / "docs" / "CHATGPT_PROMPT.md", Path(__file__).resolve().parents[1] / "docs" / "CHATGPT_PROMPT.md"):
         if cand.exists():
             text = cand.read_text(encoding="utf-8")
             return text.split("\n---\n", 1)[-1].strip()

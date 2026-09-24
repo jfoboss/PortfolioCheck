@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QFont
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from osutil import SECRET_STORE, mono_font
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QDialog
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone, date
-from decimal import Decimal
 from pathlib import Path
 
 PERIODS = [("day", "День", 1), ("week", "Неделя", 7), ("month", "Месяц", 30), ("year", "Год", 365)]

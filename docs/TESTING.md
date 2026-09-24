@@ -11,6 +11,12 @@ python -m pytest -q
   `XDG_DATA_HOME`) и `paths.data_dir()` подменены на временный каталог, системные хранилища секретов отключены
   (`tests/conftest.py`) — реальные данные и токены пользователя тесты не видят и не трогают.
 - CI гоняет тот же набор на ubuntu, windows и macos; различия ОС проверяет `tests/test_platform.py`.
+- Статическая проверка — `python -m pyflakes *.py screens/*.py tests/*.py` (в CI на ubuntu): неопределённые имена
+  (ошибка, которая иначе всплывёт только при клике в редкий пункт), лишние импорты и переменные.
+- Что проверяет CI на каждый push и PR: pyflakes, весь набор тестов на трёх ОС, `check_private.sh`, сборки macOS /
+  Windows / Linux и запуск собранной программы с `--demo`. Чтобы PR нельзя было смёржить с красным CI, в GitHub
+  включите защиту ветки `main`: Settings → Rules → Rulesets (или Branches) → «Require status checks to pass» и
+  выберите проверки `tests (…)`, `build-…`.
 - Сеть в тесте — только подменой `urllib.request.build_opener` / функций модуля (примеры — `tests/test_ai.py`).
 - Модальные окна подменяй (`SetupWizard.exec`), иначе тест зависнет.
 - Демо-портфель — фикстура `demo_positions` (`demo_snapshot.json`), стратегия — `demo_cfg`.

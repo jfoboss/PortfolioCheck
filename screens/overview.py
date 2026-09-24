@@ -8,7 +8,7 @@ from decimal import Decimal
 from PySide6.QtCore import Qt
 import re
 from PySide6.QtWidgets import (
-    QTableWidget, QTableWidgetItem, QHeaderView,
+    QTableWidget, QHeaderView,
 )
 
 import portfolio_check as pc

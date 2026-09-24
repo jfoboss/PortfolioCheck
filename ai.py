@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field, asdict
@@ -400,7 +399,7 @@ def _extract_json(text: str) -> dict:
 
 def build_prompt(news_items, positions, max_news: int = 60, candidates=None) -> str:
     names = {p.ticker: p.name for p in positions}
-    lines = [f"Бумаги инвестора: " + ", ".join(f"{t} ({n})" for t, n in list(names.items())[:60])]
+    lines = ["Бумаги инвестора: " + ", ".join(f"{t} ({n})" for t, n in list(names.items())[:60])]
     if candidates:
         lines.append("Бумаги-кандидаты (в портфеле их нет, инвестор их рассматривает — оцени КАЖДУЮ, при отсутствии прямых "
                      "новостей по отраслевому контексту): "

@@ -2,7 +2,6 @@
 from datetime import datetime
 from decimal import Decimal
 
-import pytest
 
 
 def test_new_user_gets_wizard_existing_does_not(qapp, monkeypatch):

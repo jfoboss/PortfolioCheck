@@ -7,8 +7,6 @@ settings_dialog.py — окно «Настройки» (немодальное, 
 
 from __future__ import annotations
 
-import re
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal, QThread

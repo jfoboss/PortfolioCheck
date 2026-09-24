@@ -11,12 +11,17 @@ def test_settings_fit_laptop_screen(window, qapp):
         window.open_settings(); d = window.settings_win
         assert d.tabs.tabBar().isHidden() and d.nav.count() == d.tabs.count() == 12
         assert d.minimumSizeHint().width() < 600
-        from PySide6.QtWidgets import QWidget
+        from PySide6.QtGui import QFontMetrics
+        from PySide6.QtWidgets import QSizePolicy, QWidget
+        # Порог — в «символах» текущего шрифта: ~100 средних символов (≈700 px шрифтом macOS). На Windows в CI тот же
+        # текст шире в ~1,7 раза, и абсолютный порог сравнивал шрифты, а не раскладку.
+        limit = 100 * QFontMetrics(d.font()).averageCharWidth()
         wide = {d.tabs.tabText(i): d.tabs.widget(i).widget().minimumSizeHint().width() for i in range(d.tabs.count())}
         culprits = sorted(((c.minimumSizeHint().width(), type(c).__name__, (getattr(c, "text", None) or (lambda: ""))()[:40])
                            for i in range(d.tabs.count()) for c in d.tabs.widget(i).widget().findChildren(QWidget)
-                           if type(c).__name__ != "QWidget"), reverse=True)[:6]
-        assert max(wide.values()) <= 700, (wide, culprits)
+                           if type(c).__name__ != "QWidget"
+                           and c.sizePolicy().horizontalPolicy() != QSizePolicy.Ignored), reverse=True)[:6]
+        assert max(wide.values()) <= limit, (limit, wide, culprits)
         d.nav.setCurrentRow(9); assert d.tabs.tabText(d.tabs.currentIndex()) == "Оповещения"
         d.tabs.setCurrentIndex(11); assert d.nav.currentRow() == 11                # палитра и «Доступ» открывают раздел
         d.close()

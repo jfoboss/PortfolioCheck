@@ -288,3 +288,13 @@ def test_generic_name_head_takes_first_meaningful_word():
     assert "Группа компаний Самолет" in kw["SMLT"] and "Группа компаний" not in kw["SMLT"]
     assert "Банк Санкт" in kw["BSPB"] and "Интер РАО" in kw["IRAO"]
     assert not N.refers("покрытие по принципу «одна группа компаний — один базовый пакет»", kw["SMLT"])
+
+
+def test_gmkn_found_by_short_name_and_cases():
+    """Регресс: у GMKN не было алиасов — новости про «Норникель» к бумаге не привязывались, а из названия
+    «Норильский никель» косвенный падеж («Норильского никеля») не находился."""
+    kw = N.build_keywords([NS(ticker="GMKN", name="Норильский никель")], N.DEFAULT_ALIASES)["GMKN"]
+    assert N.refers("акции «норникеля» стали аутсайдерами дня", kw)
+    assert N.refers("совет директоров «норильского никеля» рекомендовал выплату", kw)
+    assert N.refers("«норильский никель» отчитался за полугодие", kw)
+    assert not N.refers("в норильске похолодало", kw)

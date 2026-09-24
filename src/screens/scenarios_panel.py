@@ -17,6 +17,7 @@ import scenarios as SC
 from charts import DivergingBarChart
 from diagnostics import log
 import style as SY
+from ui_common import get_token
 from widgets import scroll_wrap, is_running
 from workers import FactorsWorker
 
@@ -66,12 +67,13 @@ class ScenariosMixin:
             return
         if is_running(getattr(self, "factors_worker", None)):
             return
-        self.factors_worker = FactorsWorker(cache)
+        self.factors_worker = FactorsWorker(cache, get_token())
         self.factors_worker.done.connect(self._on_factors)
         self.factors_worker.start()
 
     def _on_factors(self, status: dict) -> None:
         bad = {k: v for k, v in status.items() if v != "ok"}
+        self._factors_errors = bad                    # показываются в подписи сценариев и календаря ЦБ
         if bad:
             log.warning("факторы сценариев: %s", bad)
         self._sc_key = None                           # пересчитать беты
@@ -88,19 +90,24 @@ class ScenariosMixin:
             candles = {p.figi: H.load_cached(cache, p.figi) for p in self.positions if p.figi}
             idx, usd = FA.load(cache, FA.IMOEX), FA.load(cache, FA.USDRUB)
             self._sc_key = key
-            self._sc_betas = SC.betas(self.positions, candles, idx, usd) if idx and usd else None
+            self._sc_betas = SC.betas(self.positions, candles, idx, usd) if idx or usd else None     # хватит и одного
         return self._sc_betas
 
     def render_scenarios(self) -> None:
         if not hasattr(self, "tbl_sc"):
             return
         b = self._scenario_betas() if self.positions else None
+        errs = getattr(self, "_factors_errors", {})
+        err_txt = "; ".join(f"{k}: {v}" for k, v in errs.items() if k in (FA.IMOEX, FA.USDRUB))
         if not b:
-            self.lbl_sc.setText("Для сценариев нужны история индекса Мосбиржи и курса доллара (MOEX ISS и ЦБ, без "
-                                "токена) — они загружаются после обновления портфеля. Проверить доступ: Справка → "
-                                "«Проверить подключения».")
+            self.lbl_sc.setText("Для сценариев нужна история индекса Мосбиржи (MOEX ISS) или курса доллара (T-Invest, "
+                                "запасной — ЦБ) — загружается после обновления портфеля."
+                                + (" " + SY.span(f"Не загрузилось: {err_txt}", SY.BAD) if err_txt else
+                                   " Проверить доступ: Справка → «Проверить подключения»."))
             self.chart_sc.set_data([]); self._fill(self.tbl_sc, []); return
         bs, missing = b
+        cache = paths.cache_dir()
+        idx_ok, usd_ok = bool(FA.load(cache, FA.IMOEX)), bool(FA.load(cache, FA.USDRUB))
         r = SC.apply(bs, self.sp_sc_index.value(), self.sp_sc_usd.value(), missing, pc.class_label)
         money = SY.money_fn(self.privacy, signed=True)
         pct = r.change / r.total * 100 if r.total else 0.0
@@ -108,7 +115,11 @@ class ScenariosMixin:
             f"Оценка: <b>{money(r.change)} ₽</b> ({pct:+.1f}% от оценённой части портфеля). "
             "<span style='color:gray'>Линейное приближение по связям прошлого года (β); в кризис связи меняются — "
             "это ориентир масштаба, не прогноз.</span>"
-            + (f"<br><span style='color:gray'>Без истории цен, не оценены: {', '.join(r.missing)}.</span>" if r.missing else ""))
+            + (f"<br><span style='color:gray'>Без истории цен, не оценены: {', '.join(r.missing)}.</span>" if r.missing else "")
+            + ("<br>" + SY.span(f"Только по {'индексу' if not usd_ok else 'доллару'}: "
+                               f"{'курс доллара' if not usd_ok else 'индекс'} не загрузился"
+                               + (f" ({err_txt})" if err_txt else "") + " — вторая бета считается нулевой.", SY.WARN)
+               if not (idx_ok and usd_ok) else ""))
         self.chart_sc.hide_values = self.privacy
         self.chart_sc.set_data(sorted(((c, v) for c, v in r.by_class.items() if abs(v) > 0.5), key=lambda x: -x[1]))
         beta = {x.ticker: x for x in bs}

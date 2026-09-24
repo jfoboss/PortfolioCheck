@@ -15,6 +15,9 @@ import news as NEWS
 import screener as SCR
 import style as SY
 
+import logging
+log = logging.getLogger("portfolio")
+
 
 class FairPriceWorker(QThread):
     """Пересчёт цен эталонов для заблокированных после правки настроек — без перезагрузки портфеля."""
@@ -103,7 +106,8 @@ class LongHistoryWorker(QThread):
 
 
 class IdeasEnrichWorker(QThread):
-    """Догрузка свечей по кандидатам скринера: изменение за месяц. Как для позиций — в фоне, с кэшем."""
+    """Догрузка по кандидатам скринера: свечи (изменение за месяц) и ближайшая выплата (GetDividends).
+    Дата из фундаментала (ex_dividend_date) — прошлая отсечка, для календаря не годится."""
     done = Signal(object)
     failed = Signal(str)
 
@@ -113,7 +117,7 @@ class IdeasEnrichWorker(QThread):
 
     def run(self) -> None:
         try:
-            out = {}
+            out, pays = {}, {}
             with pc.connect(self.token) as client:
                 for idea in self.ideas[:self.limit]:
                     if self.isInterruptionRequested():
@@ -122,9 +126,30 @@ class IdeasEnrichWorker(QThread):
                         continue
                     series = H.fetch_candles(client, idea.uid, self.cache_dir, days=120, by_uid=True)
                     out[idea.ticker] = H.period_changes(series, idea.price).get("month")
-            self.done.emit(out)
+                    nxt = self._next_payout(client, idea)
+                    if nxt is not None:
+                        pays[idea.ticker] = nxt
+            self.done.emit({"month": out, "payouts": pays})
         except Exception as e:  # noqa: BLE001
             self.failed.emit(SY.err_text(e, 200))
+
+
+    @staticmethod
+    def _next_payout(client, idea):
+        """Ближайшая выплата кандидата на одну бумагу: объявленная или ожидаемая по прошлому году."""
+        import payouts as PO
+        from datetime import datetime, timedelta
+        from types import SimpleNamespace
+        now = datetime.now()
+        try:
+            divs = client.instruments.get_dividends(instrument_id=idea.uid, from_=now - timedelta(days=400),
+                                                    to=now + timedelta(days=365)).dividends
+        except Exception as e:  # noqa: BLE001 — нет выплат или старая версия SDK: кандидат просто без даты
+            log.info("дивиденды кандидата %s: %s", idea.ticker, SY.err_text(e, 120))
+            return None
+        money = lambda v: float(getattr(v, "units", 0) or 0) + float(getattr(v, "nano", 0) or 0) / 1e9   # MoneyValue
+        pos = SimpleNamespace(ticker=idea.ticker, name=idea.name, quantity=1, currency="rub")
+        return PO.next_payout(PO.from_dividends(pos, divs, 1.0, money, now.date()), now.date())
 
 
 class ScreenerWorker(QThread):
@@ -233,19 +258,23 @@ class LoadWorker(QThread):
 
 
 class FactorsWorker(QThread):
-    """Индекс Мосбиржи (MOEX ISS) и курс доллара (ЦБ) для сценариев — без токена, не чаще раза в сутки;
+    """Индекс Мосбиржи (MOEX ISS) и курс доллара (T-Invest, запасной — ЦБ) для сценариев, не чаще раза в сутки;
     заодно календарь решений ЦБ по ставке (не чаще раза в неделю)."""
     done = Signal(object)
 
-    def __init__(self, cache_dir: Path):
+    def __init__(self, cache_dir: Path, token: str | None = None):
         super().__init__()
-        self.cache_dir = cache_dir
+        self.cache_dir, self.token = cache_dir, token
 
     def run(self) -> None:
         import factors as FA
         import macro
+
+        def usd():
+            with pc.connect(self.token) as client:
+                return H.fetch_candles(client, FA.USD_FIGI, self.cache_dir, days=400)
         try:
-            status = FA.fetch_all(self.cache_dir)
+            status = FA.fetch_all(self.cache_dir, usd_series=usd if self.token else None)
             status["calendar"] = macro.fetch_calendar(self.cache_dir)
             self.done.emit(status)
         except Exception as e:  # noqa: BLE001

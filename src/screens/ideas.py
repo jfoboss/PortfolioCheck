@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor
 
 import portfolio_check as pc
 import paths
+import payouts as PO
 import style as SY
 from diagnostics import log
 import news as NEWS
@@ -88,8 +89,15 @@ class IdeasMixin:
         self.ideas_worker.failed.connect(lambda m: log.warning("свечи кандидатов: %s", m))
         self.ideas_worker.start()
 
-    def _on_ideas_enriched(self, changes: dict) -> None:
+    def _on_ideas_enriched(self, result: dict) -> None:
         res = getattr(self, "_last_screen", None)
+        pays = result.get("payouts") or {}
+        if pays:                                   # ближайшие выплаты кандидатов → «Календарь» (и в кэш — на старт)
+            self.cand_payouts = {**getattr(self, "cand_payouts", {}), **pays}
+            PO.save_candidates(self.cand_payouts, paths.cache_dir())
+            log.info("кандидаты: ближайшие выплаты для %d бумаг", len(pays))
+            self.render_payouts()
+        changes = result.get("month") or {}
         if not changes:
             log.info("кандидаты: изменение за месяц не загружено")
             return

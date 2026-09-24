@@ -54,9 +54,11 @@ def ols2(y: list[float], x1: list[float], x2: list[float]) -> tuple[float, float
     s12 = sum((a - m1) * (b - m2) for a, b in zip(x1, x2))
     s1y = sum((a - m1) * (c - my) for a, c in zip(x1, y)); s2y = sum((b - m2) * (c - my) for b, c in zip(x2, y))
     det = s11 * s22 - s12 * s12
-    if abs(det) < 1e-18:                             # факторы вырождены — одна переменная
-        b1 = s1y / s11 if s11 else 0.0
-        b2 = 0.0
+    if abs(det) < 1e-18:                             # факторы вырождены (или один ряд пуст) — одна переменная
+        if s11:
+            b1, b2 = s1y / s11, 0.0
+        else:
+            b1, b2 = 0.0, (s2y / s22 if s22 else 0.0)
     else:
         b1 = (s1y * s22 - s2y * s12) / det
         b2 = (s2y * s11 - s1y * s12) / det
@@ -67,9 +69,12 @@ def ols2(y: list[float], x1: list[float], x2: list[float]) -> tuple[float, float
 
 def betas(positions, candles: dict[str, list], index: list, usd: list, days: int = 365,
           today: date | None = None) -> tuple[list[Beta], list[str]]:
-    """(беты бумаг, тикеры без истории). candles — figi → свечи; index, usd — ряды факторов."""
+    """(беты бумаг, тикеры без истории). candles — figi → свечи; index, usd — ряды факторов.
+    Если один ряд не загрузился (у части пользователей cbr.ru не отвечает) — однофакторная регрессия по другому,
+    бета к отсутствующему фактору = 0 (в интерфейсе это подписано)."""
     start = ((today or date.today()) - timedelta(days=days)).isoformat()
     ri, rf = _rets(index, start), _rets(usd, start)
+    common = (set(ri) & set(rf)) if (ri and rf) else set(ri or rf)
     out, missing = [], []
     for p in positions:
         v = float(p.value_rub)
@@ -78,10 +83,10 @@ def betas(positions, candles: dict[str, list], index: list, usd: list, days: int
         if p.ticker in FX_TICKERS:                   # валюта: стоимость в рублях = количество × курс
             out.append(Beta(p.ticker, p.name, v, 0.0, 1.0, 1.0, p.cls)); continue
         r = _rets(candles.get(p.figi) or [], start)
-        dates = sorted(set(r) & set(ri) & set(rf))
+        dates = sorted(set(r) & common)
         if len(dates) < 30:
             missing.append(p.ticker); continue
-        b1, b2, r2 = ols2([r[d] for d in dates], [ri[d] for d in dates], [rf[d] for d in dates])
+        b1, b2, r2 = ols2([r[d] for d in dates], [ri.get(d, 0.0) for d in dates], [rf.get(d, 0.0) for d in dates])
         out.append(Beta(p.ticker, p.name, v, b1, b2, r2, p.cls))
     return out, missing
 

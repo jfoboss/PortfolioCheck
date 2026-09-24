@@ -73,3 +73,41 @@ def test_parsers_and_fetch_all_with_stub(tmp_path):
         raise OSError("403")
     st = FA.fetch_all(tmp_path / "x", fetch=broken, today=TODAY)
     assert st["IMOEX"].startswith("OSError") and st["USDRUB"].startswith("OSError")
+
+
+def test_one_factor_when_other_missing():
+    """Регресс: у пользователя cbr.ru не отвечал (курс доллара не загрузился) — сценарии не считались вовсе,
+    хотя индекс Мосбиржи был. Теперь — однофакторная регрессия по доступному ряду, вторая бета = 0."""
+    import random
+    from datetime import date, timedelta
+    from types import SimpleNamespace as NS
+    rnd = random.Random(1)
+    d0 = date(2026, 1, 1)
+    idx, px = [], []
+    lvl, p = 1000.0, 100.0
+    for k in range(200):
+        r = rnd.gauss(0, 0.01)
+        lvl *= 1 + r; p *= 1 + 1.3 * r + rnd.gauss(0, 0.002)
+        day = (d0 + timedelta(days=k)).isoformat()
+        idx.append((day, lvl)); px.append((day, p))
+    pos = [NS(ticker="X", name="X", figi="f", value_rub=1000.0, cls="equity_core")]
+    bs, missing = SC.betas(pos, {"f": px}, idx, [], today=d0 + timedelta(days=199))
+    assert not missing and abs(bs[0].bm - 1.3) < 0.1 and bs[0].bfx == 0.0
+    bs, _ = SC.betas(pos, {"f": px}, [], idx, today=d0 + timedelta(days=199))     # только «доллар»
+    assert abs(bs[0].bfx - 1.3) < 0.1 and bs[0].bm == 0.0
+
+
+def test_usd_from_tinvest_first_cbr_fallback(tmp_path):
+    """Регресс: курс доллара брался только с cbr.ru — у пользователя сайт ЦБ обрывал TLS по таймауту, и сценарии
+    пустели. Теперь сначала T-Invest (тот же канал, что портфель), ЦБ — только если T-Invest не дал ряд."""
+    def iss_only(url):
+        if "iss.moex.com" in url:
+            return json.dumps({"history": {"columns": ["TRADEDATE", "CLOSE"], "data": [["2026-09-01", 2900.0]]}}).encode()
+        raise TimeoutError("_ssl.c:993: The handshake operation timed out")
+    rows = [(f"2026-0{m}-{d:02d}", 80.0 + d / 10) for m in (7, 8) for d in range(1, 29)]
+    st = FA.fetch_all(tmp_path, fetch=iss_only, today=TODAY, usd_series=lambda: rows)
+    assert st["USDRUB"] == "ok" and len(FA.load(tmp_path, FA.USDRUB)) == len(rows)
+    def dead():
+        raise RuntimeError("нет токена")
+    st = FA.fetch_all(tmp_path / "y", fetch=iss_only, today=TODAY, usd_series=dead)
+    assert st["USDRUB_tinvest"].startswith("RuntimeError") and st["USDRUB"].startswith("TimeoutError")

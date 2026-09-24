@@ -26,7 +26,7 @@ app.py  ── каркас главного окна: сборка UI, меню
   screener.py         ── дивидендный скринер по фундаменталу T-Invest
   consensus.py        ── консенсус-прогнозы аналитиков (GetForecastBy), кэш forecast_<uid>.json на сутки
   scenarios.py        ── сценарии: двухфакторные беты (индекс, доллар) и оценка изменения стоимости
-  factors.py          ── ряды факторов: IMOEX (MOEX ISS) и USD/RUB (ЦБ), кэш candles_IMOEX / candles_USDRUB
+  factors.py          ── ряды факторов: IMOEX (MOEX ISS) и USD/RUB (T-Invest, запасной — ЦБ), кэш candles_IMOEX / candles_USDRUB
   alerts.py           ── оповещения-условия: проверка после обновлений, однократность (cache/alerts_state.json)
   risk.py             ── риск по свечам: волатильность, просадка, эффективное N, вклад в риск, корреляции
   export.py           ── CSV под русский Excel: таблицы окна и история стоимости
@@ -83,6 +83,7 @@ Windows `%APPDATA%\PortfolioCheck\`, Linux `$XDG_DATA_HOME/PortfolioCheck/` (о�
 | `cache/candles_IMOEX.json`, `cache/candles_USDRUB.json` | ряды факторов для сценариев (раз в сутки) | `factors.fetch_all` |
 | `cache/macro_calendar.json` | календарь ЦБ по ключевой ставке (раз в неделю, вместе с факторами) | `macro.fetch_calendar` |
 | `cache/payouts.json` | выплаты для календаря (прошлые, объявленные, ожидаемые) | `payouts.save` |
+| `cache/candidate_payouts.json` | ближайшие выплаты кандидатов скринера (GetDividends при догрузке кандидатов) | `payouts.save_candidates` |
 | `cache/screener.json` | результат скринера (`source: tinvest2`) | `screener.screen` |
 | `cache/ai_responses.json` | кэш ответов ИИ с отпечатками | `ai.ResponseCache` |
 | `cache/ai_summary.json`, `cache/exec_<экран>.json` | последние сводки для мгновенного показа | `ai.save_*` |

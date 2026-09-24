@@ -172,6 +172,10 @@ def fill_caches(d: Path, positions) -> None:
                                  (rec + timedelta(days=12)).isoformat(), round(per_year / n * 1.05, 4), p.currency,
                                  float(p.quantity), round(per_year / n * 1.05 * float(p.quantity), 2), "declared"))
     PO.save(PO.with_expected(raw, today), cache)
+    PO.save_candidates({i.ticker: PO.Payout(i.ticker, i.name, (date.fromisoformat(i.ex_div_date) + timedelta(days=1)).isoformat(),
+                                            i.ex_div_date, "", round(i.div_per_share * 0.87, 4), "RUB", 1.0,
+                                            round(i.div_per_share * 0.87, 2), "declared" if n % 2 == 0 else "expected")
+                        for n, i in enumerate(ideas)}, cache)
 
     # факторы для сценариев: индекс — среднее движение акций демо-портфеля плюс шум (иначе беты были бы нулевыми),
     # доллар — своё блуждание. Сеть в демо не используется.

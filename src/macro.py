@@ -40,7 +40,7 @@ class Macro:
     target: float        # цель ЦБ, %
 
 
-def fetch_cbr_macro(timeout: int = 15) -> Macro:
+def fetch_cbr_macro(timeout: int = 25) -> Macro:
     """Сайт ЦБ — с корнями ОС (net.fetch), как остальные сайты; бандл T-Invest здесь не нужен."""
     import net
     return parse_cbr_table(net.fetch(CBR_URL, timeout=timeout).decode("utf-8", "replace"))
@@ -114,7 +114,7 @@ def fetch_calendar(cache_dir: Path, fetch=None) -> str:
         return "ok"
     if fetch is None:
         import net
-        fetch = net.fetch                      # корни ОС
+        fetch = lambda url: net.fetch(url, timeout=25)     # noqa: E731 — корни ОС; cbr.ru бывает медленным
     try:
         save_calendar(parse_cbr_calendar(fetch(CAL_URL).decode("utf-8", "replace")), cache_dir)
         return "ok"

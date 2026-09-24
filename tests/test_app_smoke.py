@@ -5,17 +5,6 @@ from decimal import Decimal
 import pytest
 
 
-@pytest.fixture
-def window(qapp, monkeypatch):
-    import app as A
-    import wizard as W
-    monkeypatch.setattr(W.SetupWizard, "exec", lambda self: 0)          # мастер модальный — в тестах не ждём
-    A.ensure_config(A.paths.data_dir() / "config.yaml")
-    w = A.MainWindow(str(A.paths.data_dir() / "config.yaml"))
-    yield w
-    w.close()
-
-
 def test_new_user_gets_wizard_existing_does_not(qapp, monkeypatch):
     import app as A
     import wizard as W
@@ -183,3 +172,56 @@ def test_guest_mode_and_switch_to_real_profile(qapp, monkeypatch, isolated_home)
     (isolated_home / "data" / "snapshots").mkdir(parents=True, exist_ok=True)
     (isolated_home / "data" / "snapshots" / "2026-01-01.json").write_text("[]", encoding="utf-8")
     assert not A.should_start_as_guest()                     # свои данные есть — демо не нужно
+
+
+def test_command_palette(window, demo_positions):
+    """Палитра ⌘K: тикер → карточка первой строкой, «ТИКЕР новости» → лента по бумаге, разделы настроек."""
+    from PySide6.QtGui import QKeySequence
+    from news import NewsItem
+    from screens.palette import entries, rank
+    window.on_loaded((demo_positions, None, None, []))
+    window.news_items = [NewsItem("Сбербанк отчитался", "", "s", None, ["SBERP"])]
+    window._fill_news_filter()
+    items = entries(window)
+    top = rank(items, "sberp", window)
+    assert top[0].ticker == "SBERP" and top[0].kind == "бумага"
+    assert rank(items, "сбер", window)[0].ticker == "SBERP"                  # по названию тоже
+    assert "LKOH" in [e.ticker for e in rank(items, "нефть", window)]         # и по отрасли
+    top[0].run()
+    assert window._cards["SBERP"].isVisible(); window._cards["SBERP"].close()
+    cmd = rank(items, "SBERP новости", window)
+    assert len(cmd) == 1 and "новости" in cmd[0].title
+    cmd[0].run()
+    assert window.tabs.tabText(window.tabs.currentIndex()) == "Рынок" and window.news_filter.currentData() == "SBERP"
+    st = rank(items, "настройки скринер", window)
+    assert st[0].title == "Настройки → Скринер"
+    st[0].run()
+    assert window.settings_win.tabs.tabText(window.settings_win.tabs.currentIndex()) == "Скринер"
+    window.settings_win.close()
+    assert rank(items, "идеи", window)[0].title == "Экран «Идеи»"
+    assert window.act_palette.shortcut() == QKeySequence("Ctrl+K")
+
+
+def test_numeric_columns_sort_as_numbers(window, demo_positions):
+    """Регресс: таблицы сортировали числа как строки — «18,300» оказывался больше «192,000», «-7.3» выше «+10.8»."""
+    from PySide6.QtCore import Qt
+    window.on_loaded((demo_positions, None, None, []))
+    window.set_privacy(False)
+    t = window.tbl_pos
+    col = next(c for c in range(t.columnCount()) if t.horizontalHeaderItem(c).text().startswith("Стоимость"))
+    t.sortByColumn(col, Qt.DescendingOrder)
+    vals = [float(t.item(r, col).text().replace(",", "")) for r in range(t.rowCount())]
+    assert vals == sorted(vals, reverse=True)
+    pl = t.columnCount() - 1
+    t.sortByColumn(pl, Qt.AscendingOrder)
+    pls = [float(t.item(r, pl).text()) for r in range(t.rowCount())]
+    assert pls == sorted(pls)
+
+
+def test_sort_item_keys(qapp):
+    """Числа в любом оформлении — числами; даты, время и текст — текстом (иначе «2026-10-03» стало бы 2026)."""
+    from widgets import SortItem
+    k = lambda t: SortItem(t)._key()
+    assert k("1,234.56") == 1234.56 and k("▲ +2.4%") == 2.4 and k("274.05 RUB") == 274.05 and k("−3.1") == -3.1
+    assert k("2026-10-03") == "2026-10-03" and k("24.09 07:36") == "24.09 07:36" and k("SBERP") == "SBERP"
+    assert k("—") is None and k("•••") is None

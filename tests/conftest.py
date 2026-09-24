@@ -24,6 +24,11 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "LOCAL_DIR", local)
     monkeypatch.setattr(paths, "POINTER", local / "storage.json")
     monkeypatch.setattr(paths, "data_dir", lambda: tmp_path / "data", raising=False)
+    # настоящие хранилища секретов (Keychain, Credential Manager, Secret Service) тесты не трогают — только файл
+    import secrets_store as SEC
+    monkeypatch.setattr(SEC, "_wincred", lambda: None)
+    monkeypatch.setattr(SEC, "SECURITY", str(tmp_path / "no-security-binary"))
+    monkeypatch.setattr(SEC, "_cache", {})
     (tmp_path / "data" / "cache").mkdir(parents=True, exist_ok=True)
     yield tmp_path
 
@@ -58,3 +63,14 @@ def demo_positions():
 def demo_cfg():
     import strategy as ST
     return ST.apply_preset({"instruments": {}}, "dividend_defensive")
+
+
+@pytest.fixture
+def window(qapp, monkeypatch):
+    import app as A
+    import wizard as W
+    monkeypatch.setattr(W.SetupWizard, "exec", lambda self: 0)          # мастер модальный — в тестах не ждём
+    A.ensure_config(A.paths.data_dir() / "config.yaml")
+    w = A.MainWindow(str(A.paths.data_dir() / "config.yaml"))
+    yield w
+    w.close()

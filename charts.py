@@ -255,10 +255,12 @@ class RangeBarChart(QWidget):
 class DivergingBarChart(QWidget):
     """Расходящиеся бары: вправо — докупить, влево — продать (₽ до ближайшей границы коридора)."""
 
-    def __init__(self, title: str, parent=None):
+    def __init__(self, title: str, parent=None, left_label: str = "продать ←", right_label: str = "→ докупить",
+                 empty_text: str = "всё в коридорах"):
         super().__init__(parent)
         self.title = title
-        self.rows: list[tuple[str, float]] = []   # (имя, дельта ₽: + докупить, − продать)
+        self.left_label, self.right_label, self.empty_text = left_label, right_label, empty_text
+        self.rows: list[tuple[str, float]] = []   # (имя, дельта ₽: + вправо, − влево)
         self.hide_values = False
         self.setMinimumHeight(160)
 
@@ -274,7 +276,7 @@ class DivergingBarChart(QWidget):
         p.setPen(fg); p.setFont(QFont(self.font().family(), 12, QFont.Bold))
         p.drawText(QRectF(0, 4, W, 24), Qt.AlignHCenter, QFontMetrics(p.font()).elidedText(self.title, Qt.ElideRight, int(W - 8)))
         if not self.rows:
-            p.setFont(QFont(self.font().family(), 10)); p.drawText(QRectF(0, 0, W, H), Qt.AlignCenter, "всё в коридорах"); return
+            p.setFont(QFont(self.font().family(), 10)); p.drawText(QRectF(0, 0, W, H), Qt.AlignCenter, self.empty_text); return
         left = min(200, int(W * 0.28)); right = 16; top = 40
         plot = QRectF(left, top, W - left - right, H - top - 8)
         rowh = max(14.0, min(26.0, plot.height() / max(1, len(self.rows))))
@@ -282,8 +284,8 @@ class DivergingBarChart(QWidget):
         cx = plot.center().x(); half = plot.width() / 2 - 70
         p.setFont(QFont(self.font().family(), 9))
         p.setPen(fg)
-        p.drawText(QRectF(plot.left(), plot.top() - 16, half, 12), Qt.AlignRight, "продать ←")
-        p.drawText(QRectF(cx + 4, plot.top() - 16, half, 12), Qt.AlignLeft, "→ докупить")
+        p.drawText(QRectF(plot.left(), plot.top() - 16, half, 12), Qt.AlignRight, self.left_label)
+        p.drawText(QRectF(cx + 4, plot.top() - 16, half, 12), Qt.AlignLeft, self.right_label)
         p.setPen(QPen(grid, 1)); p.drawLine(QPointF(cx, plot.top()), QPointF(cx, plot.bottom()))
         for i, (name, v) in enumerate(self.rows):
             y = plot.top() + i * rowh

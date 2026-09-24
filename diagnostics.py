@@ -18,7 +18,7 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication, QFont
 from osutil import SECRET_STORE, mono_font
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QDialog
 
-APP_VERSION = "1.2"
+APP_VERSION = "1.3"
 LOG_NAME = "portfolio-check.log"
 log = logging.getLogger("portfolio")
 

@@ -56,13 +56,17 @@ from screens.privacy import PrivacyMixin
 from screens.overview import RenderMixin
 from screens.payouts import PayoutsMixin
 from screens.card import CardMixin
+from screens.attribution import AttributionMixin
+from screens.palette import PaletteMixin
+from screens.exporting import ExportMixin
+from screens.risk_panel import RiskMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, ExportMixin, RiskMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -163,10 +167,16 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         act_wizard = QAction("Мастер настройки…", self); act_wizard.triggered.connect(lambda: self.run_wizard(first=False))
         m_file.addAction(act_wizard); m_file.addSeparator()
         m_file.addAction(act_open); m_file.addAction(act_save)
+        act_exp = QAction("Экспорт истории стоимости (CSV)…", self); act_exp.triggered.connect(lambda: self.export_history())
+        m_file.addAction(act_exp)
         m_file.addSeparator(); m_file.addAction(self.act_prefs)
         m_file.addSeparator(); m_file.addAction(act_quit)
 
         m_view = self.menuBar().addMenu("Вид")
+        self.act_palette = QAction("Команды и поиск…", self); self.act_palette.setShortcut(QKeySequence("Ctrl+K"))
+        self.act_palette.setToolTip("Тикер → карточка, «SBERP новости», экраны, действия, разделы настроек")
+        self.act_palette.triggered.connect(self.open_palette)
+        m_view.addAction(self.act_palette); m_view.addSeparator()
         m_view.addAction(self.act_refresh)
         m_view.addSeparator(); m_view.addAction(self.act_privacy)
         act_exec = QAction("ИИ-сводки по экранам", self); act_exec.setShortcut(QKeySequence("Ctrl+Shift+I"))
@@ -367,7 +377,10 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         b_split.addWidget(b_charts); b_split.setStretchFactor(0, 3); b_split.setStretchFactor(1, 2)
         bl.addWidget(b_split, 1)
         self.pos_split = QSplitter(Qt.Vertical); self.pos_split.setObjectName("portfolio")
-        self.pos_split.addWidget(pos_top); self.pos_split.addWidget(blocked_w)
+        self.pos_bottom = QTabWidget(); self.pos_bottom.setDocumentMode(True)
+        self.pos_bottom.addTab(self._build_risk_panel(), "Риск")
+        self.pos_bottom.addTab(blocked_w, "Заблокированные бумаги")
+        self.pos_split.addWidget(pos_top); self.pos_split.addWidget(self.pos_bottom)
         self.pos_split.setStretchFactor(0, 3); self.pos_split.setStretchFactor(1, 2)
         pf = QWidget(); pfl = QVBoxLayout(pf); pfl.setContentsMargins(8, 8, 8, 8)
         pfl.addWidget(self.exec_panels["portfolio"]); pfl.addWidget(self.pos_split, 1)
@@ -417,8 +430,10 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.forecast.request_long_history = lambda years: self.apply_growth_base(fetch_if_needed=True)
         hist_w = self._doc_panel(QWidget()); hsl2 = QVBoxLayout(hist_w); hsl2.setContentsMargins(8, 8, 8, 8)
         hsl2.addWidget(self.chart_history, 1); hsl2.addWidget(self.lbl_history)
-        strat_bottom = QSplitter(Qt.Horizontal); strat_bottom.addWidget(hist_w); strat_bottom.addWidget(self.txt_report)
-        strat_bottom.setStretchFactor(0, 3); strat_bottom.setStretchFactor(1, 2)
+        strat_bottom = QSplitter(Qt.Horizontal); strat_bottom.setObjectName("strategy_bottom")
+        strat_bottom.addWidget(hist_w); strat_bottom.addWidget(self._build_attribution_panel())
+        strat_bottom.addWidget(self.txt_report)
+        strat_bottom.setStretchFactor(0, 3); strat_bottom.setStretchFactor(1, 3); strat_bottom.setStretchFactor(2, 2)
         strategy = QSplitter(Qt.Vertical); strategy.setObjectName("strategy")
         strategy.addWidget(self.forecast); strategy.addWidget(strat_bottom)
         strategy.setStretchFactor(0, 3); strategy.setStretchFactor(1, 2)
@@ -431,6 +446,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
 
         self._build_screen_actions()
         self._connect_cards()
+        self._install_export_menus()
 
         central = QWidget(); cl_ = QVBoxLayout(central); cl_.setContentsMargins(0, 0, 0, 0); cl_.setSpacing(0)
         cl_.addWidget(self.banner); cl_.addWidget(self.tabs, 1)
@@ -805,6 +821,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self._auto_note = ""
         self.render()
         self.autosave()
+        self.render_attribution()                  # после сохранения: сегодняшний снапшот — конец периода
         self.pipeline_step("portfolio", "свечи")
         self.start_history()
         if getattr(self, "_last_alerts", 0) and self.tray.isVisible() and self.cfg.get("refresh", {}).get("notify", True):

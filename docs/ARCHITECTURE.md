@@ -21,6 +21,9 @@ app.py  ── каркас главного окна: сборка UI, меню
   history.py          ── дневные свечи, изменения за периоды, CAGR, восстановленная история
   news.py             ── RSS/Atom, каталог источников, привязка новостей к бумагам
   screener.py         ── дивидендный скринер по фундаменталу T-Invest
+  risk.py             ── риск по свечам: волатильность, просадка, эффективное N, вклад в риск, корреляции
+  export.py           ── CSV под русский Excel: таблицы окна и история стоимости
+  attribution.py      ── откуда изменение стоимости: переоценка / покупки нетто между снапшотами
   payouts.py          ── календарь выплат: прошлые/объявленные из GetDividends, «ожидается» по прошлому году, поток
   ai.py               ── провайдеры LLM, сводки, кэш ответов, каталог OpenRouter, разбор 429
   macro.py            ── инфляция и ставка с сайта ЦБ РФ
@@ -28,7 +31,7 @@ app.py  ── каркас главного окна: сборка UI, меню
   osutil.py           ── различия ОС: платформа, подписи сочетаний клавиш, моноширинный шрифт, имя хранилища секретов
   config_migrate.py   ── config_version и явные миграции формата конфига
   demo.py             ── режим --demo: временная папка данных, демо-снапшот, секреты только в памяти
-  secrets_store.py    ── Keychain через /usr/bin/security (macOS), Credential Manager через keyring (Windows)
+  secrets_store.py    ── Keychain через /usr/bin/security (macOS), keyring: Credential Manager (Windows), Secret Service (Linux)
 ```
 
 `forecast.py` содержит и модель (`simulate`, `simulate_monthly`, `plan_status`, `required_contribution`,
@@ -55,8 +58,9 @@ app.py  ── каркас главного окна: сборка UI, меню
 
 ## Данные на диске
 
-Корень — `paths.data_dir()`: `~/Library/Application Support/PortfolioCheck/` или
-`~/Library/Mobile Documents/com~apple~CloudDocs/PortfolioCheck/` (выбор — в `storage.json` локальной папки).
+Корень — `paths.data_dir()`. Локальная папка (`paths.LOCAL_DIR`) — по ОС: macOS `~/Library/Application Support/PortfolioCheck/`,
+Windows `%APPDATA%\PortfolioCheck\`, Linux `$XDG_DATA_HOME/PortfolioCheck/` (обычно `~/.local/share`). Вместо неё
+можно выбрать iCloud Drive (только macOS) или любую папку; выбор — в `storage.json` локальной папки.
 
 | путь | что | кто пишет |
 |---|---|---|
@@ -73,9 +77,10 @@ app.py  ── каркас главного окна: сборка UI, меню
 | `cache/ai_model_checks.json` | результаты кнопки «Проверить» по моделям | `ai.check_model` |
 | `cache/openrouter_models.json` | каталог моделей OpenRouter (сутки) | `ai.fetch_openrouter_models` |
 | `logs/` | лог приложения | `diagnostics.setup_logging` |
-| `ca-bundle.pem` | корни для gRPC (grpcio + Минцифры) | `make_ca_bundle.sh`, настройки |
+| `ca-bundle.pem` | корни для gRPC (grpcio + Минцифры) | Настройки → Доступ → «Собрать бандл» (`settings_dialog.build_ca_bundle`) |
 
-Секреты — только в Keychain (сервисы в `secrets_store.py`), в файлы не пишутся (кроме аварийного файла 0600).
+Секреты — только в системном хранилище (сервисы в `secrets_store.py`), в файлы не пишутся — кроме аварийного файла
+0600 в локальной папке, если хранилище недоступно (например, Linux без Secret Service).
 Размеры окна и разделителей — `QSettings("PortfolioCheck", "PortfolioCheck")`.
 
 ## Ключевые форматы
@@ -104,3 +109,15 @@ app.py  ── каркас главного окна: сборка UI, меню
 Меню: Файл (мастер, снапшоты, настройки, выход) · Вид (обновить, глазик, ИИ-сводки, экраны ⌘1…) · Окно · Справка.
 Роли macOS: `PreferencesRole`, `AboutRole`, `QuitRole` — Qt переносит эти пункты в меню приложения. Вкладка
 запоминается по имени, а не по индексу.
+
+## Платформы и сборка
+
+| | macOS | Windows | Linux |
+|---|---|---|---|
+| сборка | `build_mac.sh` → `.app` + `.dmg` (ad-hoc codesign) | `build.py` → onedir + zip | `build.py` → onedir + tar.gz, `.desktop`, `install.sh` |
+| секреты | `/usr/bin/security` | keyring → Credential Manager | keyring → Secret Service |
+| папка данных | Application Support, iCloud | `%APPDATA%` | `$XDG_DATA_HOME` |
+| особенности | меню приложения (роли Qt), TCC для iCloud | SmartScreen без подписи | нужны `libxcb-cursor0` и др. для Qt; сборка на ubuntu-22.04 (glibc 2.35) |
+
+Различия ОС в коде — только `osutil.py` и `paths.py`. CI (`ci.yml`) гоняет тесты на трёх ОС, собирает все три
+варианта и запускает собранную программу с `--demo` на 20 секунд; `release.yml` прикладывает сборки к релизу.

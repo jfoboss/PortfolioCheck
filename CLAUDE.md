@@ -1,18 +1,19 @@
 # PortfolioCheck — инструкции для агента
 
-Настольное приложение для macOS и Windows (Python 3.12 + PySide6) — сверяет портфель в Т-Инвестициях (T-Invest API, gRPC)
+Настольное приложение для macOS, Windows и Linux (Python 3.12 + PySide6) — сверяет портфель в Т-Инвестициях (T-Invest API, gRPC)
 с правилами пользователя. Интерфейс, документация, комментарии и коммиты — **на русском**.
 
 ## Команды
 
-- Окружение: `./bootstrap_mac.sh` (Python 3.12 через Homebrew, `.venv`, зависимости); для тестов ещё
-  `.venv/bin/pip install -r requirements-dev.txt`
+- Окружение: macOS — `./bootstrap_mac.sh` (Python 3.12 через Homebrew, `.venv`, зависимости); Windows и Linux —
+  venv + SDK с GitHub + `requirements.txt` (команды — README → «Сборка из исходников»); для тестов ещё
+  `pip install -r requirements-dev.txt`
 - Запуск из исходников: `.venv/bin/python app.py`; на вымышленном портфеле без токена и без записи в настоящий
   профиль — `.venv/bin/python app.py --demo` (для скриншотов и осмотра UI)
 - Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`)
-- Сборка: `./build_mac.sh` → `dist/PortfolioCheck.app` и `.dmg` (только на macOS); Windows — `python build_windows.py`
-  (на Windows) или CI: `.github/workflows/ci.yml` гоняет тесты на ubuntu/windows/macos и собирает zip под Windows;
-  релиз (GitHub → Releases → Publish с тегом `vX.Y`) — `.github/workflows/release.yml` прикладывает zip и dmg
+- Сборка: macOS — `./build_mac.sh` → `.app` и `.dmg`; Windows и Linux — `python build.py` (на своей ОС) → zip /
+  tar.gz. CI (`.github/workflows/ci.yml`): тесты на ubuntu/windows/macos, сборки всех трёх ОС и запуск собранной
+  программы в демо. Релиз (GitHub → Releases → Publish с тегом `vX.Y`) — `release.yml` прикладывает dmg, zip, tar.gz
 - Различия ОС — только через `osutil.py` (платформа, подписи сочетаний клавиш, шрифт) и `paths.py` (папки);
   сочетания задавай как `Ctrl+…` (на macOS это ⌘), в подписях — `native_keys()`, не «⌘» руками
 - Перед каждым коммитом/push: `scripts/check_private.sh` — ищет личные данные в исходниках
@@ -20,10 +21,11 @@
 ## Жёсткие правила
 
 1. **Никаких личных данных в репозитории.** Всё личное (классификация бумаг, заморозки, чёрный список, суммы,
-   id счёта) живёт только в конфиге пользователя вне репозитория (`~/Library/Application Support/PortfolioCheck/`
-   или iCloud). В коде — только нейтральные дефолты; демо — только вымышленное (`demo_snapshot.json`).
+   id счёта) живёт только в конфиге пользователя вне репозитория (папка данных ОС — см. `paths.py`: Application
+   Support / `%APPDATA%` / `~/.local/share`, или выбранная пользователем папка, в т.ч. iCloud). В коде — только нейтральные дефолты; демо — только вымышленное (`demo_snapshot.json`).
    Скриншоты `check_private.sh` не проверяет — их содержимое согласуй с пользователем.
-2. **Не читай и не печатай секреты.** Токен T-Invest и ключи ИИ — в Keychain (`secrets_store.py`). Не добавляй
+2. **Не читай и не печатай секреты.** Токен T-Invest и ключи ИИ — в системном хранилище (`secrets_store.py`:
+   Keychain / Credential Manager / Secret Service). Не добавляй
    логирование, которое может их вывести. Токен только на чтение; программа никогда не отправляет заявки.
 3. **Программа считает и подсвечивает, решения — за человеком.** Никаких формулировок «купи/продай» в UI и
    промптах ИИ. Инвестиционные советы в ответах пользователю не давать.
@@ -63,9 +65,9 @@
 - Архитектура, модули, потоки данных, форматы кэша: `docs/ARCHITECTURE.md`
 - Почему сделано именно так (решения и отвергнутые варианты): `docs/DECISIONS.md`
 - История ошибок с причинами — читать перед правками в соответствующем модуле: `docs/LESSONS.md`
-- Что делать дальше: `docs/BACKLOG.md`; обсуждаемые крупные направления — `docs/CROSS_PLATFORM.md`,
+- Что делать дальше: `docs/BACKLOG.md`; платформы и выбор UI — `docs/CROSS_PLATFORM.md`; функции «как в терминале» —
   `docs/TERMINAL_IDEAS.md`
-- Как тестировать, включая ручную проверку на macOS: `docs/TESTING.md`
+- Как тестировать, включая ручную проверку на macOS, Windows и Linux: `docs/TESTING.md`
 - Правила по областям кода подгружаются сами при работе с файлами: `.claude/rules/`
 
 ## Стиль работы

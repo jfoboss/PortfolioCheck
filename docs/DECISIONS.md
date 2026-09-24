@@ -41,3 +41,7 @@
     `keyring` (Credential Manager): причина, по которой `keyring` отвергнут на macOS (подпись бандла), там не
     действует. Проверка — CI на трёх ОС и запуск собранного `.exe --demo`. Отвергнуто: Electron/Tauri сейчас
     (см. `docs/CROSS_PLATFORM.md`), ядро за API (п. 9 — нет второго потребителя).
+15. **Linux — тем же путём, что Windows**: `build.py` общий для Windows и Linux (onedir + zip / tar.gz), секреты —
+    `keyring` → Secret Service с запасным файлом 0600, папка — `$XDG_DATA_HOME`. Формат — tar.gz с `.desktop` и
+    `install.sh` (без sudo). Сборка на ubuntu-22.04 — старее glibc, запускается на большем числе дистрибутивов.
+    Отвергнуто пока: AppImage / Flatpak / deb (дополнительный инструментарий без явной потребности).

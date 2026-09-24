@@ -47,6 +47,9 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --hidden-import widgets \
   --hidden-import osutil \
   --hidden-import payouts \
+  --hidden-import attribution \
+  --hidden-import export \
+  --hidden-import risk \
   --hidden-import workers \
   --collect-submodules screens \
   --hidden-import wizard \

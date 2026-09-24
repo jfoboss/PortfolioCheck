@@ -48,7 +48,7 @@ jobs:
           pip install --no-deps "git+https://github.com/RussianInvestments/invest-python.git"
           pip install -r requirements.txt pillow
       - name: Сборка
-        run: python build_windows.py
+        run: python build.py
       - name: Запуск собранного .exe в демо-режиме (дымовой тест)
         shell: pwsh
         run: |
@@ -83,3 +83,34 @@ jobs:
         with:
           name: PortfolioCheck-macos
           path: dist/*.dmg
+
+  build-linux:
+    needs: tests
+    runs-on: ubuntu-22.04          # старее glibc — сборка запустится на большем числе дистрибутивов
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Системные библиотеки Qt
+        run: sudo apt-get update -q && sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 libxcb-cursor0 libxcb-xkb1
+      - name: Зависимости и SDK T-Invest
+        run: |
+          pip install --no-deps "git+https://github.com/RussianInvestments/invest-python.git"
+          pip install -r requirements.txt
+      - name: Сборка
+        run: python build.py
+      - name: Запуск собранной программы в демо-режиме (дымовой тест)
+        run: |
+          mkdir -p /tmp/smoke && tar xzf dist/PortfolioCheck-linux-x86_64.tar.gz -C /tmp/smoke
+          /tmp/smoke/PortfolioCheck/PortfolioCheck --demo &
+          PID=$!
+          sleep 20
+          kill -0 $PID || { echo "приложение завершилось раньше времени"; exit 1; }
+          kill $PID
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PortfolioCheck-linux
+          path: dist/PortfolioCheck-linux-x86_64.tar.gz

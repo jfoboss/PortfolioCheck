@@ -54,7 +54,10 @@ def card_data(win, ticker: str) -> dict:
                  "single_max": float(r.get("single_name_max_pct", 0) or 0),
                  "frozen": (r.get("frozen") or {}).get(ticker),
                  "cap": (r.get("position_caps") or {}).get(ticker)}
+    import screener as SCR
+    universe = getattr(res, "all_ideas", None) or getattr(res, "ideas", None) or []
     return {"ticker": ticker, "name": name, "pos": pos, "idea": idea, "series": series, "cur": cur,
+            "peers": SCR.peer_comparison(ticker, universe),
             "changes": changes, "payouts": pays, "news": news, "ai": ai, "rules": rules}
 
 
@@ -130,7 +133,22 @@ class SecurityCard(QDialog):
                      f"(средняя за 5 лет {f(idea.avg5y_div_yield, '{:.1f}%')}) · дивиденды {idea.div_per_share:,.2f} ₽",
                      f"<br>P/E {f(idea.pe)} · долг/EBITDA {f(idea.net_debt_ebitda)} · ROE {f(idea.roe, '{:.1f}%')} · "
                      f"free float {f(idea.free_float, '{:.0f}%')} · экс-дивиденд {idea.ex_div_date or '—'}"]
-        elif pos:
+        pc_ = d["peers"]
+        if pc_:
+            fmtv = lambda v, f: "—" if v is None else f.format(v)
+            mark = {1: "<span style='color:#34C759'>▲ благоприятнее медианы</span>",
+                    -1: "<span style='color:#FF453A'>▼ хуже медианы</span>", 0: ""}
+            peers = ", ".join(pc_["peers"][:8]) + (" …" if len(pc_["peers"]) > 8 else "")
+            html += [f"<h3>Сравнение с отраслью «{pc_['sector']}»</h3>",
+                     f"<span style='color:gray'>Медиана по {len(pc_['peers'])} бумагам отрасли из последнего прохода "
+                     f"скринера: {peers}</span>",
+                     "<table cellspacing=6><tr><th align=left>метрика</th><th align=right>бумага</th>"
+                     "<th align=right>медиана</th><th></th></tr>"]
+            for label, v, med, sign, f in pc_["rows"]:
+                html.append(f"<tr><td>{label}</td><td align=right>{fmtv(v, f)}</td><td align=right>{fmtv(med, f)}</td>"
+                            f"<td>{mark[sign]}</td></tr>")
+            html.append("</table>")
+        if not idea and pos:
             html.append("<p style='color:gray'>Фундаментала нет: бумаги нет в кэше скринера (не TQBR или скринер ещё "
                         "не запускался — экран «Идеи» → «Найти»).</p>")
         if d["ai"]:

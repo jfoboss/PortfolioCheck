@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Собирает минимальный PEM-бандл для gRPC: корни из grpcio + переданные сертификаты.
 # T-Invest API подписан корнем Минцифры (Russian Trusted Root CA), которого у grpcio нет.
+# Обычно не нужен: бандл собирает сама программа (Настройки → Доступ → «Собрать бандл», на любой ОС). Скрипт —
+# для ручной сборки на macOS/Linux, например с корпоративным корнем за MITM-прокси.
 #
 #   ./make_ca_bundle.sh /tmp/russian_root.pem            # обычный случай
 #   ./make_ca_bundle.sh --with-keychain corp_root.pem    # + все корни из Keychain (корпоративный MITM-прокси)
 set -euo pipefail
 
-OUT_DIR="$HOME/Library/Application Support/PortfolioCheck"
+# папка данных — та же, что у программы (paths.LOCAL_DIR: Application Support на macOS, ~/.local/share на Linux)
+OUT_DIR="$(cd "$(dirname "$0")" && python -c 'import paths; print(paths.LOCAL_DIR)')"
 OUT="$OUT_DIR/ca-bundle.pem"
 mkdir -p "$OUT_DIR"
 

@@ -28,7 +28,7 @@ def test_windows_secrets_go_to_credential_manager(monkeypatch):
         "set_password": staticmethod(lambda s, u, v: store.__setitem__((s, u), v)),
         "delete_password": staticmethod(lambda s, u: store.pop((s, u))),
     })
-    monkeypatch.setattr(SEC, "IS_WIN", True)
+    monkeypatch.setattr(SEC, "USE_KEYRING", True)
     monkeypatch.setattr(SEC, "_wincred", lambda: fake)
     monkeypatch.setattr(SEC, "_cache", {})
     assert SEC.set("svc", "u", "t.секрет") == "keychain"
@@ -55,17 +55,17 @@ def test_ca_bundle_built_without_openssl(monkeypatch, tmp_path):
 
 
 def _app_modules():
-    mods = {p.stem for p in ROOT.glob("*.py")} - {"make_icon", "build_windows", "portfolio_check_cli"}
+    mods = {p.stem for p in ROOT.glob("*.py")} - {"make_icon", "build", "portfolio_check_cli"}
     return mods
 
 
 def test_build_scripts_include_all_modules():
     """Новый модуль, забытый в сборке, всплывает только в собранном .app/.exe — ловим заранее."""
     mac = open(ROOT / "build_mac.sh", encoding="utf-8").read()
-    win = open(ROOT / "build_windows.py", encoding="utf-8").read()
+    win = open(ROOT / "build.py", encoding="utf-8").read()
     for m in _app_modules() - {"app"}:
         assert re.search(rf"--hidden-import {m}\b", mac), f"build_mac.sh: нет {m}"
-        assert f'"{m}"' in win, f"build_windows.py: нет {m}"
+        assert f'"{m}"' in win, f"build.py: нет {m}"
     for data in ("config.yaml", "demo_snapshot.json", "icon.svg", "docs"):
         assert data in mac and data in win
     assert "screens" in mac and "screens" in win

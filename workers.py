@@ -232,3 +232,19 @@ class LoadWorker(QThread):
             self.done.emit(pc.load_portfolio_full(self.token, self.cfg))
         except Exception as e:  # noqa: BLE001
             self.failed.emit(f"{type(e).__name__}: {e}")
+
+
+class FactorsWorker(QThread):
+    """Индекс Мосбиржи (MOEX ISS) и курс доллара (ЦБ) для сценариев — без токена, не чаще раза в сутки."""
+    done = Signal(object)
+
+    def __init__(self, cache_dir: Path):
+        super().__init__()
+        self.cache_dir = cache_dir
+
+    def run(self) -> None:
+        import factors as FA
+        try:
+            self.done.emit(FA.fetch_all(self.cache_dir))
+        except Exception as e:  # noqa: BLE001
+            self.done.emit({"ошибка": f"{type(e).__name__}: {e}"})

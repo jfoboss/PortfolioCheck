@@ -159,6 +159,7 @@ class RenderMixin:
         self.render_payouts()                      # суммы календаря тоже подчиняются «глазику»
         self.render_attribution()
         self.render_risk()
+        self.render_scenarios()
 
     @staticmethod
     def _fill(table: QTableWidget, rows: list) -> None:

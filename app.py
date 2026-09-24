@@ -61,13 +61,14 @@ from screens.palette import PaletteMixin
 from screens.exporting import ExportMixin
 from screens.risk_panel import RiskMixin
 from screens.alerts_ui import AlertsMixin
+from screens.scenarios_panel import ScenariosMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, ExportMixin, RiskMixin, AlertsMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, ExportMixin, RiskMixin, AlertsMixin, ScenariosMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -380,6 +381,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.pos_split = QSplitter(Qt.Vertical); self.pos_split.setObjectName("portfolio")
         self.pos_bottom = QTabWidget(); self.pos_bottom.setDocumentMode(True)
         self.pos_bottom.addTab(self._build_risk_panel(), "Риск")
+        self.pos_bottom.addTab(self._build_scenarios_panel(), "Сценарии")
         self.pos_bottom.addTab(blocked_w, "Заблокированные бумаги")
         self.pos_split.addWidget(pos_top); self.pos_split.addWidget(self.pos_bottom)
         self.pos_split.setStretchFactor(0, 3); self.pos_split.setStretchFactor(1, 2)
@@ -478,7 +480,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
             self.set_status("Доступа к iCloud Drive пока нет. После выдачи разрешения может потребоваться перезапуск приложения.")
 
     WORKERS = ("worker", "hist_worker", "news_worker", "scr_worker", "fair_worker", "ai_worker", "exec_worker",
-               "ideas_worker", "long_worker")
+               "ideas_worker", "long_worker", "factors_worker")
 
     def closeEvent(self, event) -> None:
         """Сохранить размеры окна и остановить фоновые потоки (Qt при живом QThread вызывает abort())."""

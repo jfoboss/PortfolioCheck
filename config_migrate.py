@@ -24,7 +24,7 @@ from typing import Callable
 log = logging.getLogger("portfolio.config")
 
 KEY = "config_version"
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2
 
 # Чёрный список скринера, который код домешивал к конфигу, пока в нём не было blacklist_customized.
 # Замороженная копия screener.DEFAULT_BLACKLIST на момент введения версий (он уже был пуст — личные тикеры автора
@@ -73,9 +73,25 @@ def _to_v1(cfg: dict) -> str:
     return f"v1: чёрный список скринера записан явно ({n} бумаг, было {len(before or {})})"
 
 
+# Оповещения по умолчанию на момент их появления (v2) — замороженная копия, не ссылка на код.
+V2_DEFAULT_ALERTS = [
+    {"kind": "corridor", "ticker": "", "value": 0, "on": True},
+    {"kind": "days_to_cut", "ticker": "", "value": 7, "on": True},
+    {"kind": "news", "ticker": "", "value": 0, "on": False},
+]
+
+
+def _to_v2(cfg: dict) -> str:
+    if "alerts" in cfg:
+        return "v2: раздел оповещений уже есть"
+    cfg["alerts"] = copy.deepcopy(V2_DEFAULT_ALERTS)
+    return "v2: добавлены оповещения по умолчанию (выход из коридора, 7 дней до отсечки; новости — выключены)"
+
+
 # версия, в которую переводит миграция → функция(cfg) -> описание для лога. Меняет cfg на месте.
 MIGRATIONS: dict[int, Callable[[dict], str]] = {
     1: _to_v1,
+    2: _to_v2,
 }
 
 

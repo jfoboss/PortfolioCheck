@@ -167,6 +167,8 @@ class IdeasMixin:
                          TINT_WARN if (i.net_debt_ebitda or 0) > 3 else None))
         self._fill(self.tbl_ideas, rows)
         self.render_payouts()                      # отсечки кандидатов на «Календаре»
+        if not getattr(result, "from_cache", True):
+            self.check_alerts()                    # свежий проход скринера — цены и доходность кандидатов
         # цвет и подсказки для иконок — по тикеру в строке (таблица сортируется пользователем)
         by_ticker = {i.ticker: i for i in ideas}
         for r in range(self.tbl_ideas.rowCount()):

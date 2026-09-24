@@ -41,6 +41,7 @@ class NewsMixin:
         self.btn_news.setEnabled(True)
         self.set_status(f"Новости: {len(self.news_items)} по твоим бумагам" + (f", недоступны источники: {len(failed)}" if failed else ""))
         NEWS.save_cache(self.news_items, paths.data_dir() / "cache")
+        self.check_alerts()                        # новости по бумагам
         self.pipeline_step("news", "идеи")
         if (self.cfg.get("ai") or {}).get("auto", True) and self.ai_key((self.cfg.get("ai") or {}).get("provider", "openrouter")):
             QTimer.singleShot(0, self.run_ai)

@@ -17,7 +17,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout
 
 SETTINGS_TABS = ["Общие", "Цели", "Инструменты", "Правила", "Заморозки", "Лимиты", "Курсы", "Новости", "Скринер",
-                 "ИИ", "Доступ"]
+                 "Оповещения", "ИИ", "Доступ"]
 NEWS_WORDS = {"cn", "новости", "news"}
 CARD_WORDS = {"des", "dvd", "карточка", "выплаты", "дивиденды", "fa"}
 

@@ -21,6 +21,7 @@ app.py  ── каркас главного окна: сборка UI, меню
   history.py          ── дневные свечи, изменения за периоды, CAGR, восстановленная история
   news.py             ── RSS/Atom, каталог источников, привязка новостей к бумагам
   screener.py         ── дивидендный скринер по фундаменталу T-Invest
+  alerts.py           ── оповещения-условия: проверка после обновлений, однократность (cache/alerts_state.json)
   risk.py             ── риск по свечам: волатильность, просадка, эффективное N, вклад в риск, корреляции
   export.py           ── CSV под русский Excel: таблицы окна и история стоимости
   attribution.py      ── откуда изменение стоимости: переоценка / покупки нетто между снапшотами
@@ -69,6 +70,7 @@ Windows `%APPDATA%\PortfolioCheck\`, Linux `$XDG_DATA_HOME/PortfolioCheck/` (о�
 | `snapshots/YYYY-MM-DD.json` | позиции на дату (история стоимости) | `on_loaded` |
 | `cache/candles_<figi или uid>.json` | дневные свечи `[(дата, close)]` | `history.fetch_candles` |
 | `cache/news.json` | лента | `news.save_cache` |
+| `cache/alerts_state.json` | какие условия оповещений выполнены сейчас (чтобы не повторять) | `alerts.new_hits` |
 | `cache/payouts.json` | выплаты для календаря (прошлые, объявленные, ожидаемые) | `payouts.save` |
 | `cache/screener.json` | результат скринера (`source: tinvest2`) | `screener.screen` |
 | `cache/ai_responses.json` | кэш ответов ИИ с отпечатками | `ai.ResponseCache` |
@@ -85,7 +87,7 @@ Windows `%APPDATA%\PortfolioCheck\`, Linux `$XDG_DATA_HOME/PortfolioCheck/` (о�
 
 ## Ключевые форматы
 
-- **Конфиг**: `config_version` (первой строкой; нет — значит 0), разделы `targets`, `rules`, `instruments`, `screener`, `news`, `ai`, `forecast`, `refresh`,
+- **Конфиг**: `config_version` (первой строкой; нет — значит 0; сейчас 2), разделы `alerts`, `targets`, `rules`, `instruments`, `screener`, `news`, `ai`, `forecast`, `refresh`,
   `fx_fallback`, `account`, служебные `setup_done`, `strategy_preset`, `auto_classify`, `auto_classified`.
   Схему «стратегии» (переносимой части) задают `strategy.STRATEGY_KEYS` и `strategy.validate_strategy`.
   Окно читает конфиг через `config_migrate.load_and_migrate`: старый конфиг мигрирует по шагам `MIGRATIONS`,

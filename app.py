@@ -60,13 +60,14 @@ from screens.attribution import AttributionMixin
 from screens.palette import PaletteMixin
 from screens.exporting import ExportMixin
 from screens.risk_panel import RiskMixin
+from screens.alerts_ui import AlertsMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, ExportMixin, RiskMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, PaletteMixin, ExportMixin, RiskMixin, AlertsMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -822,6 +823,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.render()
         self.autosave()
         self.render_attribution()                  # после сохранения: сегодняшний снапшот — конец периода
+        self.check_alerts()                        # свежий портфель — цены, коридоры, отсечки
         self.pipeline_step("portfolio", "свечи")
         self.start_history()
         if getattr(self, "_last_alerts", 0) and self.tray.isVisible() and self.cfg.get("refresh", {}).get("notify", True):

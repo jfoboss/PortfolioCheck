@@ -18,7 +18,7 @@ import history as H
 import news as NEWS
 import paths
 import portfolio_check as pc
-import style as ST
+import style as SY
 from charts import LineChart
 from ui_common import MASK
 
@@ -93,7 +93,7 @@ class SecurityCard(QDialog):
         d = card_data(self.win, self.ticker)
         self._news = d["news"]
         priv = self.win.privacy
-        money = (lambda v: MASK) if priv else (lambda v: f"{v:,.0f}")
+        money = SY.money_fn(priv)
         pos, idea = d["pos"], d["idea"]
         chg = " · ".join(f"{PERIOD_LABELS[k]} {v:+.1f}%" for k, v in d["changes"].items() if v is not None and k in PERIOD_LABELS)
         where = "в портфеле" if pos else ("кандидат скринера" if idea else "нет в портфеле и среди кандидатов")
@@ -116,7 +116,7 @@ class SecurityCard(QDialog):
                      f"Количество {MASK if priv else f'{float(pos.quantity):,.0f}'} · средняя {float(pos.avg_price):,.2f} · "
                      f"стоимость {money(float(pos.value_rub))} ₽ · P/L {float(pos.pnl_pct):+.1f}%",
                      f"<br>Доля в портфеле <b>{r['share']:.1f}%</b>"
-                     + (f" (лимит на эмитента {r['single_max']:.0f}%" + (" — <b style='color:#FF453A'>превышен</b>)"
+                     + (f" (лимит на эмитента {r['single_max']:.0f}%" + (" — " + SY.span("превышен", SY.BAD, bold=True) + ")"
                         if r["single_max"] and r["share"] > r["single_max"] else ")") if r["single_max"] else ""),
                      f"<br>Класс «{cls}»: {r['class_share']:.1f}%"
                      + (f", коридор {lo:.0f}–{hi:.0f}%" if lo is not None else "")]
@@ -137,8 +137,7 @@ class SecurityCard(QDialog):
         pc_ = d["peers"]
         if pc_:
             fmtv = lambda v, f: "—" if v is None else f.format(v)
-            mark = {1: "<span style='color:#34C759'>▲ благоприятнее медианы</span>",
-                    -1: "<span style='color:#FF453A'>▼ хуже медианы</span>", 0: ""}
+            mark = {1: SY.span("▲ благоприятнее медианы", SY.GOOD), -1: SY.span("▼ хуже медианы", SY.BAD), 0: ""}
             peers = ", ".join(pc_["peers"][:8]) + (" …" if len(pc_["peers"]) > 8 else "")
             html += [f"<h3>Сравнение с отраслью «{pc_['sector']}»</h3>",
                      f"<span style='color:gray'>Медиана по {len(pc_['peers'])} бумагам отрасли из последнего прохода "
@@ -153,7 +152,7 @@ class SecurityCard(QDialog):
             html.append("<p style='color:gray'>Фундаментала нет: бумаги нет в кэше скринера (не TQBR или скринер ещё "
                         "не запускался — экран «Идеи» → «Найти»).</p>")
         if d["ai"]:
-            mark = ST.sentiment_label(d["ai"].get("sentiment"))
+            mark = SY.sentiment_label(d["ai"].get("sentiment"))
             html += ["<h3>ИИ по новостям</h3>", f"{mark}. {d['ai'].get('note', '')}",
                      "<br><span style='color:gray'>Оценка заголовков моделью, не рекомендация.</span>"]
         html += self._consensus_html(d)

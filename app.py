@@ -62,6 +62,7 @@ from screens.exporting import ExportMixin
 from screens.risk_panel import RiskMixin
 from screens.alerts_ui import AlertsMixin
 from screens.scenarios_panel import ScenariosMixin
+import style as SY
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +332,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                            ("signals", "Сигналы"), ("goal", "Цель")):
             card = self._doc_panel(QWidget()); vl = QVBoxLayout(card); vl.setContentsMargins(12, 8, 12, 8); vl.setSpacing(2)
             t = QLabel(title); t.setStyleSheet("color: gray; font-size: 11px")
-            v = QLabel("—"); v.setStyleSheet("font-size: 18px; font-weight: 600")
+            v = QLabel("—"); v.setStyleSheet(SY.KPI_CSS)
             s = QLabel(""); s.setStyleSheet("color: gray; font-size: 11px")
             vl.addWidget(t); vl.addWidget(v); vl.addWidget(s)
             self.kpi[key] = (v, s); kpi_row.addWidget(card, 1)

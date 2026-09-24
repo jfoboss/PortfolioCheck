@@ -10,7 +10,7 @@ import attribution as AT
 import portfolio_check as pc
 from charts import DivergingBarChart
 from widgets import scroll_wrap
-from ui_common import MASK
+import style as SY
 
 
 class AttributionMixin:
@@ -34,7 +34,7 @@ class AttributionMixin:
             return
         classes = {p.ticker: p.cls for p in self.positions}
         a = AT.for_period(self.snap_dir(), self.cmb_attr.currentData(), classes, getattr(self, "payouts", []))
-        money = (lambda v: MASK) if self.privacy else (lambda v: f"{v:+,.0f}")
+        money = SY.money_fn(self.privacy, signed=True)
         self.chart_attr.hide_values = self.privacy
         if a is None:
             self.lbl_attr.setText("Снапшоты копятся с каждым обновлением — разложение появится, когда их будет хотя бы два.")

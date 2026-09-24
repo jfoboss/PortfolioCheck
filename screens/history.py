@@ -14,6 +14,7 @@ import history as H
 from diagnostics import log
 from ui_common import get_token
 from workers import HistoryWorker, LongHistoryWorker
+import style as SY
 
 
 class HistoryMixin:
@@ -172,22 +173,20 @@ class HistoryMixin:
             vals = [(v, c) for v, c in vals if c is not None]
             w = sum(v for v, _ in vals)
             return (sum(v * c for v, c in vals) / w) if w else None
-        def col(v):
-            return "#34C759" if v > 0 else ("#FF453A" if v < 0 else "gray")
         v, s = self.kpi["total"]; v.setText(f"{self.rub(total)} ₽"); s.setText(f"{len(self.positions)} позиций")
         for key in ("day", "month"):
             pct = weighted(key); v, s = self.kpi[key]
             if pct is None:
                 v.setText("—"); s.setText("свечи грузятся")
             else:
-                v.setText(f"{pct:+.2f}%"); v.setStyleSheet(f"font-size: 18px; font-weight: 600; color: {col(pct)}")
+                v.setText(f"{pct:+.2f}%"); v.setStyleSheet(f"{SY.KPI_CSS}; color: {SY.sign_color(pct)}")
                 s.setText(f"≈ {self.rub(total * Decimal(str(pct)) / 100)} ₽")
         fx = {k.upper(): Decimal(str(x)) for k, x in (self.cfg.get("fx_fallback") or {}).items()}
         inc = sum(p.div_12m * p.quantity * fx.get(p.currency, Decimal(1)) for p in self.positions if p.div_12m > 0)
         v, s = self.kpi["income"]; v.setText(f"{self.rub(inc)} ₽")
         s.setText(f"{float(inc / total * 100):.1f}% к портфелю, {self.rub(inc / 12)} ₽/мес" if total else "")
         n = getattr(self, "_last_alerts", 0); v, s = self.kpi["signals"]
-        v.setText(str(n)); v.setStyleSheet(f"font-size: 18px; font-weight: 600; color: {'#FF9F0A' if n else '#34C759'}")
+        v.setText(str(n)); v.setStyleSheet(f"{SY.KPI_CSS}; color: {SY.WARN if n else SY.GOOD}")
         s.setText("требуют внимания" if n else "всё по правилам")
         try:
             import forecast as F

@@ -16,11 +16,12 @@ from charts import BarChart
 from diagnostics import log
 from ui_common import MASK, TINT_WARN
 from widgets import icon_column, scroll_wrap
+import style as SY
 
 STATUS = {"declared": "✔", "expected": "≈", "paid": "✓"}                 # значок в ячейке; слово — в подсказке
-STATUS_LEGEND = {"✔": ("объявлена эмитентом", "#34C759"),
-                 "≈": ("ожидается: выплата прошлого года, сдвинутая на год — ещё не объявлена", "#8E8E93"),
-                 "✓": ("уже была", "#8E8E93")}
+STATUS_LEGEND = {"✔": ("объявлена эмитентом", SY.GOOD),
+                 "≈": ("ожидается: выплата прошлого года, сдвинутая на год — ещё не объявлена", SY.MUTED),
+                 "✓": ("уже была", SY.MUTED)}
 
 
 class PayoutsMixin:
@@ -93,7 +94,7 @@ class PayoutsMixin:
             return
         today = date.today()
         up = PO.upcoming(self.payouts, today)
-        money = (lambda v: MASK) if self.privacy else (lambda v: f"{v:,.0f}")
+        money = SY.money_fn(self.privacy)
         rows = []
         for x in up:
             soon = x.last_buy_date and 0 <= (date.fromisoformat(x.last_buy_date) - today).days <= 14
@@ -106,8 +107,8 @@ class PayoutsMixin:
         flow = PO.monthly_cashflow(self.payouts, today)
         self.chart_cashflow.hide_values = self.privacy
         self.chart_cashflow.set_data([PO.month_label(k) for k, _, _ in flow],
-                                     [("✔ объявлено", [a for _, a, _ in flow], "#34C759"),
-                                      ("≈ ожидается", [b for _, _, b in flow], "#8E8E93")])
+                                     [("✔ объявлено", [a for _, a, _ in flow], SY.GOOD),
+                                      ("≈ ожидается", [b for _, _, b in flow], SY.MUTED)])
         declared = sum(a for _, a, _ in flow); expected = sum(b for _, _, b in flow)
         month30 = [x for x in up if (date.fromisoformat(x.record_date) - today).days <= 30]
         if not self.payouts:

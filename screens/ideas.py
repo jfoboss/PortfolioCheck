@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor
 
 import portfolio_check as pc
 import paths
-import style as ST
+import style as SY
 from diagnostics import log
 import news as NEWS
 import screener as SCR
@@ -142,7 +142,7 @@ class IdeasMixin:
         self.scr_worker.done.connect(self._on_ideas)
         self.scr_worker.failed.connect(lambda m: (log.error("скринер: %s", m), self.btn_screen.setEnabled(True),
                                                   self.set_status(f"Скринер: {m[:120]}"), self.pipeline_step("ideas", None),
-                                                  self.lbl_ideas.setText(f"<span style='color:#FF453A'><b>Скринер не отработал:</b> {m[:300]}</span><br>"
+                                                  self.lbl_ideas.setText(SY.span(f"<b>Скринер не отработал:</b> {m[:300]}", SY.BAD) + "<br>"
                                                                          "Проверь связь: Справка → «Проверить подключения».")))
         self.scr_worker.start()
 
@@ -158,9 +158,9 @@ class IdeasMixin:
         rows = []
         for i in ideas:
             mc = getattr(i, "month_change", None)
-            month = "…" if mc is None else f"{ST.arrow(mc)} {mc:+.1f}%"
+            month = "…" if mc is None else f"{SY.arrow(mc)} {mc:+.1f}%"
             sent = getattr(i, "news_sentiment", "") or ("neutral" if getattr(i, "news_count", 0) else "")
-            news = (ST.sentiment(sent)[0] + (f" {i.news_count}" if getattr(i, "news_count", 0) else "")) if sent else "—"
+            news = (SY.sentiment(sent)[0] + (f" {i.news_count}" if getattr(i, "news_count", 0) else "")) if sent else "—"
             rows.append(([i.name, i.ticker, i.sector, month, news, f"{i.price:,.2f}", f"{i.cap_bln:,.0f}", f"{i.div_yield:.1f}%",
                           fmt(getattr(i, "avg5y_div_yield", None), "{:.1f}%"), f"{i.div_per_share:,.2f}",
                           fmt(i.pe), fmt(i.net_debt_ebitda), fmt(i.roe, "{:.1f}%"), fmt(i.free_float, "{:.0f}%"), i.ex_div_date],
@@ -179,12 +179,12 @@ class IdeasMixin:
             mc = getattr(i, "month_change", None)
             cm = self.tbl_ideas.item(r, 3)
             if cm is not None:
-                cm.setForeground(QColor(ST.sign_color(mc or 0)))
+                cm.setForeground(QColor(SY.sign_color(mc or 0)))
                 cm.setToolTip(f"Цена за месяц: {mc:+.1f}%" if mc is not None else "Свечи ещё грузятся")
             cn = self.tbl_ideas.item(r, 4)
             if cn is not None:
                 s = getattr(i, "news_sentiment", "")
-                mark_, color_, title_ = ST.sentiment(s)
+                mark_, color_, title_ = SY.sentiment(s)
                 cn.setForeground(QColor(color_ if s else "gray"))
                 note = getattr(i, "news_note", "")
                 if s and i.news_count:
@@ -208,10 +208,10 @@ class IdeasMixin:
             if getattr(result, "errors", 0):
                 txt += f" Ошибок запросов: {result.errors}" + (f" (последняя: {result.last_error})" if result.last_error else "") + "."
             if not ideas:
-                txt += " <span style='color:#FF9F0A'>Пусто: " + (
+                txt += " " + SY.span("Пусто: " + (
                     "T-Invest не отдал фундаментал — см. ошибку выше и лог (Справка → Диагностика и лог); нажми «Найти кандидатов», чтобы повторить без кэша."
                     if result.paying == 0 else
-                    "ослабь фильтры (например, 6% и 20 млрд) и нажми «Найти кандидатов».") + "</span>"
+                    "ослабь фильтры (например, 6% и 20 млрд) и нажми «Найти кандидатов»."), SY.WARN)
             self.lbl_ideas.setText(txt)
             log.info("скринер: %d кандидатов, проверено %d/%d, с кап. %d, платящих %d, %s", len(ideas), result.checked, result.universe,
                      result.with_cap, result.paying, src)

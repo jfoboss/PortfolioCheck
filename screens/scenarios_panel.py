@@ -16,7 +16,7 @@ import portfolio_check as pc
 import scenarios as SC
 from charts import DivergingBarChart
 from diagnostics import log
-from ui_common import MASK
+import style as SY
 from widgets import scroll_wrap
 from workers import FactorsWorker
 
@@ -102,7 +102,7 @@ class ScenariosMixin:
             self.chart_sc.set_data([]); self._fill(self.tbl_sc, []); return
         bs, missing = b
         r = SC.apply(bs, self.sp_sc_index.value(), self.sp_sc_usd.value(), missing, pc.class_label)
-        money = (lambda v: MASK) if self.privacy else (lambda v: f"{v:+,.0f}")
+        money = SY.money_fn(self.privacy, signed=True)
         pct = r.change / r.total * 100 if r.total else 0.0
         self.lbl_sc.setText(
             f"Оценка: <b>{money(r.change)} ₽</b> ({pct:+.1f}% от оценённой части портфеля). "

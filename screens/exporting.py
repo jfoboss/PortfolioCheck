@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 
+import style as SY
+
 
 class ExportMixin:
     """Экспорт в CSV (BACKLOG п. 24): контекстное меню таблиц и «Файл → Экспорт истории стоимости». Модель — export.py."""
@@ -52,7 +54,7 @@ class ExportMixin:
             return ""
         headers, rows = EX.history_rows(H.snapshot_history(self.snap_dir()), getattr(self, "backfilled", []) or [])
         if self.privacy:
-            rows = [[r[0], "•••" if r[1] else "", "•••" if r[2] else ""] for r in rows]
+            rows = [[r[0], SY.MASK if r[1] else "", SY.MASK if r[2] else ""] for r in rows]
         EX.write_csv(path, headers, rows)
         self._export_done(path)
         return path

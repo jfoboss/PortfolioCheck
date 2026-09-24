@@ -30,6 +30,7 @@ TARGET_CLASSES = ["gold", "real_estate", "real_estate_wh", "real_estate_other",
 TARGET_LABELS = CLASS_LABELS
 
 from ai import KEY_SERVICE as AI_KEY_SERVICE   # один источник имени — ai.py
+import style as SY
 KEYRING_SERVICE = "portfolio-check.tinkoff"
 KEYRING_USER = "invest-api-token"
 INVEST_HOST = "invest-public-api.tinkoff.ru"
@@ -167,6 +168,13 @@ def server_chain(host: str, port: int = 443, timeout: int = 20) -> list[tuple[st
 # ---------------------------------------------------------------------------
 # Окно настроек
 # ---------------------------------------------------------------------------
+
+def _set_check_mark(item, ok: bool, msg: str = "") -> None:
+    """✓/✗ с цветом в ячейке таблицы источников (полный текст — в подсказке)."""
+    mark, color = SY.ok_mark(ok)
+    item.setText(mark + (f" {msg[:30] if ok else short_error(msg)}" if msg else ""))
+    item.setForeground(QColor(color)); item.setToolTip(msg)
+
 
 def short_error(msg: str) -> str:
     """Ошибка загрузки ленты → пара слов для узкой колонки; полный текст — в подсказке."""
@@ -381,8 +389,8 @@ class ModelPicker(QWidget):
             if not self.models or not mid:
                 self.why.setText(prefix); return
             rec = next((x["id"] for x in self.models if x["free"] and x["recommended"]), "")
-            self.why.setText("<span style='color:#FF9F0A'>Этой модели сейчас нет в каталоге OpenRouter — бесплатные версии "
-                             "снимают без предупреждения.</span>" + (f" Например, подойдёт <code>{rec}</code> ★." if rec else ""))
+            self.why.setText(SY.span("Этой модели сейчас нет в каталоге OpenRouter — бесплатные версии снимают без "
+                                     "предупреждения.", SY.WARN) + (f" Например, подойдёт <code>{rec}</code> ★." if rec else ""))
             return
         self.why.setText(prefix + ("★ Рекомендуется: " if m["recommended"] else "") + (m["why"] or ""))
 
@@ -646,7 +654,7 @@ class SettingsDialog(QDialog):
         combo.setCurrentIndex(max(0, combo.findData(cls)))
         if ticker in (self.cfg.get("auto_classified") or []):
             combo.setToolTip("Класс определён автоматически — проверь")
-            combo.setStyleSheet("color: #FF9F0A")
+            combo.setStyleSheet(f"color: {SY.WARN}")
         combo.currentIndexChanged.connect(self._touch)
         combo.currentIndexChanged.connect(lambda _=0, c=combo: (c.setStyleSheet(""), c.setToolTip("")))
         self.t_instr.setCellWidget(r, 2, combo)
@@ -869,8 +877,9 @@ class SettingsDialog(QDialog):
             results[url] = ok
             lbl = status_labels.get(url)
             if lbl is not None:
-                lbl.setText(("✓ " if ok else "✗ ") + (msg[:30] if ok else short_error(msg)))
-                lbl.setStyleSheet("color: #34C759" if ok else "color: #FF453A")
+                mark, color = SY.ok_mark(ok)
+                lbl.setText(f"{mark} " + (msg[:30] if ok else short_error(msg)))
+                lbl.setStyleSheet(f"color: {color}")
                 lbl.setToolTip(msg)
 
         bottom = QHBoxLayout()
@@ -914,25 +923,32 @@ class SettingsDialog(QDialog):
             r = self.t_feeds.rowCount(); self.t_feeds.insertRow(r)
             self.t_feeds.setItem(r, 0, _cell(u))
             ok = results.get(u)
-            mark = "" if ok is None else ("✓" if ok else "✗")
-            it = _cell(mark, editable=False)
+            it = _cell("", editable=False)
             if ok is not None:
-                it.setForeground(QColor("#34C759") if ok else QColor("#FF453A"))
+                _set_check_mark(it, ok)
             self.t_feeds.setItem(r, 1, it)
         self._touch()
 
     def _feeds_check(self) -> None:
-        """Проверить каждый источник: пишем ✓/✗ в колонку «Статус»."""
-        import news as NEWS
+        """Проверить каждый источник — в фоне (FeedCheckWorker), ✓/✗ в колонку «Статус» по мере ответов.
+        Раньше проверка шла в UI-потоке через processEvents — окно замирало на медленных лентах (правило 4)."""
+        if getattr(self, "_feeds_worker", None) is not None and self._feeds_worker.isRunning():
+            return
+        rows = {}
         for r in range(self.t_feeds.rowCount()):
             url = self._text(self.t_feeds, r, 0)
-            if not url:
-                continue
-            self.t_feeds.item(r, 1).setText("…"); QApplication.processEvents()
-            ok, msg = NEWS.check_feed(url, self.bundle_path)
-            it = self.t_feeds.item(r, 1)
-            it.setText(("✓ " if ok else "✗ ") + msg)
-            it.setForeground(QColor("#34C759") if ok else QColor("#FF453A"))
+            if url:
+                rows[url] = r
+                self.t_feeds.item(r, 1).setText("…")
+
+        def one(url: str, ok: bool, msg: str) -> None:
+            r = rows.get(url)
+            it = self.t_feeds.item(r, 1) if r is not None and r < self.t_feeds.rowCount() else None
+            if it is not None and self._text(self.t_feeds, r, 0) == url:
+                _set_check_mark(it, ok, msg)
+        self._feeds_worker = FeedCheckWorker(list(rows), self)
+        self._feeds_worker.one.connect(one)
+        self._feeds_worker.start()
 
     # ---- Скринер ------------------------------------------------------------
 
@@ -1068,8 +1084,8 @@ class SettingsDialog(QDialog):
                 "кнопка «Проверить» — ещё 1.")
         block = ""
         if AI.RATE_BLOCK_UNTIL and AI.RATE_BLOCK_UNTIL > __import__("datetime").datetime.now():
-            block = (f"<br><span style='color:#FF453A'>Дневной лимит исчерпан, запросы к :free-моделям не отправляются "
-                     f"до {AI.RATE_BLOCK_UNTIL:%H:%M}.</span>")
+            block = "<br>" + SY.span(f"Дневной лимит исчерпан, запросы к :free-моделям не отправляются "
+                                     f"до {AI.RATE_BLOCK_UNTIL:%H:%M}.", SY.BAD)
         self.lbl_ai_tier.setText(base + block)
         if not key:
             return
@@ -1314,7 +1330,7 @@ class SettingsDialog(QDialog):
         return it.text().strip() if it else ""
 
     def closeEvent(self, event) -> None:
-        for name, ms in (("_models_worker", 3000), ("_tier_worker", 3000), ("_check_worker", 60000)):
+        for name, ms in (("_models_worker", 3000), ("_tier_worker", 3000), ("_check_worker", 60000), ("_feeds_worker", 15000)):
             wk = getattr(self, name, None)
             if wk is not None and wk.isRunning():
                 wk.wait(ms)                # дожидаемся, чтобы не уничтожить живой поток (SIGABRT)

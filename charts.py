@@ -11,6 +11,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QBrush, QFontMetrics
 from PySide6.QtWidgets import QWidget
+import style as SY
 
 ROW_MIN = 22          # минимальная высота строки в барах: текст 9 pt + сама полоска
 
@@ -76,7 +77,7 @@ class LineChart(QWidget):
         for k in range(ticks + 1):
             v = ymin + span * k / ticks; yy = Y(v)
             p.setPen(QPen(grid, 1)); p.drawLine(QPointF(plot.left(), yy), QPointF(plot.right(), yy))
-            p.setPen(fg); p.drawText(QRectF(0, yy - 8, left - 6, 16), Qt.AlignRight | Qt.AlignVCenter, "•••" if self.hide_values else fmt_money(v))
+            p.setPen(fg); p.drawText(QRectF(0, yy - 8, left - 6, 16), Qt.AlignRight | Qt.AlignVCenter, SY.MASK if self.hide_values else fmt_money(v))
         lw = max(fm.horizontalAdvance(str(x)) for x in self.x_labels) + 12      # подписи по оси X не наезжают
         step = max(1, -(-n * lw // max(plot.width(), 1)))
         for i in range(0, n, int(step)):
@@ -149,7 +150,7 @@ class PieChart(QWidget):
         hole = rect.adjusted(d * 0.28, d * 0.28, -d * 0.28, -d * 0.28)
         p.setBrush(self.palette().base()); p.drawEllipse(hole)
         p.setPen(fg); p.setFont(QFont(self.font().family(), 9))
-        p.drawText(hole, Qt.AlignCenter, "•••" if self.hide_total else fmt_money(total))
+        p.drawText(hole, Qt.AlignCenter, SY.MASK if self.hide_total else fmt_money(total))
         # легенда
         lx, ly = rect.right() + 18, 40
         rowh = 16
@@ -228,7 +229,7 @@ class BarChart(QWidget):
                     x += w; tot += max(v, 0.0)
                 p.setPen(fg)
                 p.drawText(QRectF(x + 6, y0, right + 40, bar_h + 2), Qt.AlignLeft | Qt.AlignVCenter,
-                           "•••" if self.hide_values else (fmt_money(tot) if tot > 0 else "—"))
+                           SY.MASK if self.hide_values else (fmt_money(tot) if tot > 0 else "—"))
                 p.setPen(QPen(grid, 1)); p.drawLine(QPointF(4, y0 + group_h - 3), QPointF(W - 4, y0 + group_h - 3))
                 continue
             for j, (name, vals, color) in enumerate(self.series):
@@ -239,7 +240,7 @@ class BarChart(QWidget):
                 p.drawRoundedRect(QRectF(plot.left(), y + 2, max(w, 1 if v > 0 else 0), bar_h - 4), 3, 3)
                 p.setPen(fg)
                 p.drawText(QRectF(plot.left() + w + 6, y, right + 40, bar_h), Qt.AlignLeft | Qt.AlignVCenter,
-                           "•••" if self.hide_values else (fmt_money(v) if v > 0 else "—"))
+                           SY.MASK if self.hide_values else (fmt_money(v) if v > 0 else "—"))
             p.setPen(QPen(grid, 1)); p.drawLine(QPointF(4, y0 + group_h - 6), QPointF(W - 4, y0 + group_h - 6))
 
 
@@ -290,7 +291,7 @@ class RangeBarChart(QWidget):
                 p.setPen(Qt.NoPen); p.setBrush(QBrush(band))
                 p.drawRoundedRect(QRectF(X(a), y + 1, max(X(b) - X(a), 3), rowh - 8), 3, 3)   # коридор — широкая полоса
                 in_range = (lo is None or share >= lo) and (hi is None or share <= hi)
-                color = QColor("#34C759") if in_range else (QColor("#FF9F0A") if (lo is not None and share < lo) else QColor("#FF453A"))
+                color = QColor(SY.GOOD if in_range else (SY.WARN if (lo is not None and share < lo) else SY.BAD))
             else:
                 color = QColor(fg); color.setAlpha(120)
             p.setPen(Qt.NoPen); p.setBrush(QBrush(color))
@@ -342,13 +343,13 @@ class DivergingBarChart(QWidget):
             label = QFontMetrics(p.font()).elidedText(name, Qt.ElideRight, left - 16)
             p.drawText(QRectF(4, y, left - 12, rowh - 6), Qt.AlignRight | Qt.AlignVCenter, label)
             w = half * abs(v) / vmax
-            color = QColor("#34C759") if v > 0 else QColor("#FF453A")
+            color = QColor(SY.GOOD if v > 0 else SY.BAD)
             p.setPen(Qt.NoPen); p.setBrush(QBrush(color))
             bh = max(rowh - 14, 4.0)
             rect = QRectF(cx, y + (rowh - 6 - bh) / 2, w, bh) if v > 0 else QRectF(cx - w, y + (rowh - 6 - bh) / 2, w, bh)
             p.drawRoundedRect(rect, 3, 3)
             p.setPen(fg)
-            txt = "•••" if self.hide_values else fmt_money(abs(v))
+            txt = SY.MASK if self.hide_values else fmt_money(abs(v))
             if v > 0:
                 p.drawText(QRectF(cx + w + 6, y, 80, rowh - 6), Qt.AlignLeft | Qt.AlignVCenter, txt)
             else:

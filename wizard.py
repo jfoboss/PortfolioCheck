@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 import strategy as ST
+import style as SY
 from portfolio_check import CLASS_LABELS
 
 
@@ -134,8 +135,8 @@ class SetupWizard(QWizard):
         maxs = sum(hi.value() for _, hi in self.tgt_spins.values())
         ok = mins <= 100 <= maxs or maxs == 0
         self.lbl_sum.setText(f"Сумма минимумов {mins:.0f}%, сумма максимумов {maxs:.0f}% — "
-                             + ("коридоры совместимы." if ok else "<span style='color:#FF453A'>коридоры не сходятся: "
-                                "100% должно быть между суммой минимумов и максимумов.</span>"))
+                             + ("коридоры совместимы." if ok else SY.span("коридоры не сходятся: 100% должно быть "
+                                                                         "между суммой минимумов и максимумов.", SY.BAD)))
 
     # ---- 4. Правила ----
     def _page_rules(self) -> QWizardPage:

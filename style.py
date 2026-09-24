@@ -43,3 +43,19 @@ def sentiment(s: str | None) -> tuple[str, str, str]:
 def sentiment_label(s: str | None) -> str:
     """«▲ позитив» / «■ нейтрально» / «▼ негатив» — для текста."""
     return {"positive": "▲ позитив", "negative": "▼ негатив"}.get(s or "", "■ нейтрально")
+
+
+def span(text: str, color: str, bold: bool = False) -> str:
+    """Цветной фрагмент для HTML-подписей (QLabel с RichText, QTextBrowser)."""
+    b = ";font-weight:600" if bold else ""
+    return f"<span style='color:{color}{b}'>{text}</span>"
+
+
+MASK = "•••"              # режим «глазика»: сумма скрыта (проценты и цены видны)
+
+
+def money_fn(mask: bool, signed: bool = False):
+    """Формат суммы для таблиц: «1,234» / «+1,234» или маска — одна функция вместо копий lambda на каждом экране."""
+    if mask:
+        return lambda v: MASK
+    return (lambda v: f"{v:+,.0f}") if signed else (lambda v: f"{v:,.0f}")

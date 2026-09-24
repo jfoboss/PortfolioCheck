@@ -625,7 +625,7 @@ def check_rules(positions: list[Position], total: Decimal, rules: dict) -> dict[
 # ---------------------------------------------------------------------------
 
 import re as _re
-MASK = "•••"
+from style import MASK, money_fn   # noqa: E402 — маска «глазика» и формат сумм живут в style.py
 _MONEY_RE = _re.compile(r"(?<![\w%])[-+]?~?\d[\d\s,.]*\s*(?:тыс\.?|млн\.?|млрд\.?|к)?\s?(?:₽|руб\.?|рублей)", _re.I)
 
 
@@ -642,7 +642,7 @@ def render(positions: list[Position], cfg: dict, mask: bool = False) -> str:
     if mask:
         tgt_lines = [mask_text(l) for l in tgt_lines]
         rules = {k: [mask_text(l) for l in v] for k, v in rules.items()}
-    M = (lambda v: MASK) if mask else (lambda v: f"{v:,.0f}")
+    M = money_fn(mask)
 
     out = [f"# Портфель — {datetime.now():%d.%m.%Y %H:%M}", "",
            f"Стоимость: **{M(total)} ₽**", "", "## Доли по классам", "",

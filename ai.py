@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 
 import net
-import style as ST
+import style as SY
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -279,8 +279,8 @@ def render_exec_html(s: ExecSummary, mask=None, note: str = "") -> str:
                 f"<div title='{title}' style='color:{color};font-weight:700;font-size:15px'>{mark}</div>"
                 f"<ul style='margin:2px 0 0 14px;padding:0'>{lis}</ul></td>")
     return (f"<div style='font-weight:600;font-size:13px'>{m(s.headline)}</div>"
-            f"<table style='width:100%'><tr>{col('✓', 'Хорошо', ST.GOOD, s.good)}{col('✕', 'Плохо', ST.BAD, s.bad)}"
-            f"{col('⚑', 'Следить', ST.WARN, s.watch)}</tr></table>"
+            f"<table style='width:100%'><tr>{col('✓', 'Хорошо', SY.GOOD, s.good)}{col('✕', 'Плохо', SY.BAD, s.bad)}"
+            f"{col('⚑', 'Следить', SY.WARN, s.watch)}</tr></table>"
             + _meta_html("ИИ", s.provider, s.model, s.at, note, "оценка, не рекомендация"))
 
 
@@ -665,7 +665,7 @@ def render_html(s: Summary, names: dict[str, str], privacy: bool = False, note: 
     if s.items:
         rows = []
         for it in s.items:
-            mark, col, title = ST.sentiment(it["sentiment"])
+            mark, col, title = SY.sentiment(it["sentiment"])
             rows.append(f"<tr><td title='{title}' style='padding:2px 6px 2px 0;color:{col};font-weight:700'>{mark}</td>"
                         f"<td style='padding:2px 8px 2px 0'><span style='background:{col};color:white;border-radius:4px;"
                         f"padding:1px 6px;font-weight:600'>{it['ticker']}</span></td>"

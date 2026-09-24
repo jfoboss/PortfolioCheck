@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
@@ -53,7 +53,7 @@ def qapp():
 @pytest.fixture
 def demo_positions():
     import portfolio_check as pc
-    pos = pc.load_snapshot(str(ROOT / "demo_snapshot.json"))
+    pos = pc.load_snapshot(str(ROOT / "src" / "demo_snapshot.json"))
     for i, p in enumerate(pos):
         p.figi = p.figi or f"F{i}"
     return pos

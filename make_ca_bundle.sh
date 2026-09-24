@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # папка данных — та же, что у программы (paths.LOCAL_DIR: Application Support на macOS, ~/.local/share на Linux)
-OUT_DIR="$(cd "$(dirname "$0")" && python -c 'import paths; print(paths.LOCAL_DIR)')"
+OUT_DIR="$(cd "$(dirname "$0")/src" && python -c 'import paths; print(paths.LOCAL_DIR)')"
 OUT="$OUT_DIR/ca-bundle.pem"
 mkdir -p "$OUT_DIR"
 
@@ -50,4 +50,4 @@ else
 fi
 openssl crl2pkcs7 -nocrl -certfile "$OUT" 2>/dev/null | openssl pkcs7 -print_certs -noout 2>/dev/null | grep -q "Russian Trusted Root CA" \
   && echo "Russian Trusted Root CA в бандле: есть" || echo "Russian Trusted Root CA в бандле: НЕТ"
-echo "Проверка: python portfolio_check.py"
+echo "Проверка: python src/portfolio_check.py"

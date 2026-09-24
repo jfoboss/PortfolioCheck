@@ -51,7 +51,7 @@ def test_import_rejects_incompatible_corridors():
 
 def test_prompt_example_imports_cleanly():
     import re
-    md = (ST.Path(ST.__file__).parent / "docs" / "CHATGPT_PROMPT.md").read_text(encoding="utf-8")
+    md = (ST.Path(ST.__file__).resolve().parents[1] / "docs" / "CHATGPT_PROMPT.md").read_text(encoding="utf-8")
     block = re.findall(r"```yaml\n(.*?)```", md, re.S)[-1]
     new, warns, replaced = ST.import_strategy({}, block)
     assert not warns and "targets" in replaced

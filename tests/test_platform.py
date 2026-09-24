@@ -56,7 +56,7 @@ def test_ca_bundle_built_without_openssl(monkeypatch, tmp_path):
 
 
 def _app_modules():
-    mods = {p.stem for p in ROOT.glob("*.py")} - {"make_icon", "build", "portfolio_check_cli"}
+    mods = {p.stem for p in (ROOT / "src").glob("*.py")}
     return mods
 
 

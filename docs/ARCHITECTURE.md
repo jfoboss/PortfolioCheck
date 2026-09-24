@@ -2,6 +2,9 @@
 
 ## Слои
 
+Все модули и ресурсы программы (`config.yaml`, `demo_snapshot.json`, `icon.svg`) — в `src/`; в корне репозитория —
+README, скрипты сборки (`build_mac.sh`, `build.py`, `scripts/`), `docs/`, `tests/`.
+
 ```
 app.py  ── каркас главного окна: сборка UI, меню, конвейер загрузки, действия, main()
   ├─ screens/            ── экраны как миксины MainWindow: history (история, тепловая карта), news (лента, ИИ-сводка),

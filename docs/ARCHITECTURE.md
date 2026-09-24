@@ -21,6 +21,7 @@ app.py  ── каркас главного окна: сборка UI, меню
   history.py          ── дневные свечи, изменения за периоды, CAGR, восстановленная история
   news.py             ── RSS/Atom, каталог источников, привязка новостей к бумагам
   screener.py         ── дивидендный скринер по фундаменталу T-Invest
+  consensus.py        ── консенсус-прогнозы аналитиков (GetForecastBy), кэш forecast_<uid>.json на сутки
   scenarios.py        ── сценарии: двухфакторные беты (индекс, доллар) и оценка изменения стоимости
   factors.py          ── ряды факторов: IMOEX (MOEX ISS) и USD/RUB (ЦБ), кэш candles_IMOEX / candles_USDRUB
   alerts.py           ── оповещения-условия: проверка после обновлений, однократность (cache/alerts_state.json)

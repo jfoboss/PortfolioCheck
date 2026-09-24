@@ -248,3 +248,19 @@ class FactorsWorker(QThread):
             self.done.emit(FA.fetch_all(self.cache_dir))
         except Exception as e:  # noqa: BLE001
             self.done.emit({"ошибка": f"{type(e).__name__}: {e}"})
+
+
+class ForecastWorker(QThread):
+    """Консенсус-прогноз по одной бумаге (T-Invest GetForecastBy) для карточки — с кэшем на сутки."""
+    done = Signal(object)
+
+    def __init__(self, token: str, uid: str, cache_dir: Path, parent=None):
+        super().__init__(parent)                    # родитель — карточка: поток живёт, пока жива она
+        self.token, self.uid, self.cache_dir = token, uid, cache_dir
+
+    def run(self) -> None:
+        import consensus as CS
+        try:
+            self.done.emit(CS.fetch(self.token, self.uid, self.cache_dir))
+        except Exception as e:  # noqa: BLE001
+            self.done.emit({"error": f"{type(e).__name__}: {str(e)[:160]}"})

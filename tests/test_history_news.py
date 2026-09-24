@@ -182,3 +182,28 @@ def test_news_offtopic_and_ambiguous_aliases():
                    "Мосбиржа запустила новые торги": ["MOEX"]}
     assert not N.refers("сборная завоевала золото", kw["GLDRUB_TOM"])
     assert N.refers("цены на золото растут", kw["GLDRUB_TOM"])
+
+
+def test_news_source_rules_funds_and_entities():
+    """Регресс: smart-lab (блоги) привязывал посты к бумагам и «макро» по тексту поста («Портфель на 23 сентября» →
+    AGRO, «Человек и пароход» → макро); служебные сообщения Мосбиржи шли как новости акции MOEX; заметка РБК про кино
+    («отработать технологии съемок») привязывалась к фонду TECH по слову из названия; в заголовках — «&quot;»."""
+    pos = [NS(ticker="AGRO", name="Русагро", instrument_type="share"), NS(ticker="MOEX", name="Московская Биржа"),
+           NS(ticker="TECH", name="Технологии 100", instrument_type="etf"), NS(ticker="SBERP", name="Сбербанк")]
+    kw = N.build_keywords(pos, N.DEFAULT_ALIASES)
+    assert kw["TECH"] == ["TECH"]                                         # у фонда — только тикер и алиасы
+
+    def it(title, summary="", source="rbc.ru"):
+        return N.NewsItem(title, "", source, None, [], summary)
+    items = [it("Портфель на 23 сентября 2026 г.", "держу Русагро, жду дивиденд", "smart-lab.ru"),
+             it("Человек и пароход", "про ключевая ставка и дивиденд", "smart-lab.ru"),
+             it("Русагро: разбор отчётности", "", "smart-lab.ru"),
+             it("О начале торгов ценными бумагами", "Московская биржа сообщает", "moex.com"),
+             it("Об исключении ценных бумаг", "облигации ПАО Сбербанк исключены", "moex.com"),
+             it("Режиссер рассказал, почему время сказок в кино уходит", "Сказки позволили отработать технологии съемок")]
+    got = {x.title: x.matched for x in N.match(items, kw)}
+    assert got == {"Русагро: разбор отчётности": ["AGRO"], "Об исключении ценных бумаг": ["SBERP"]}
+    feed = (b"<rss><channel><item><title>O &amp;quot;25&amp;quot; ok</title><description>&amp;laquo;x&amp;raquo;"
+            b"</description></item></channel></rss>")
+    one = N.parse_feed(feed, "moex.com")[0]
+    assert one.title == 'O "25" ok' and one.summary == "«x»"

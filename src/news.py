@@ -7,6 +7,7 @@ news.py — лента новостей по позициям из RSS-исто�
 
 from __future__ import annotations
 
+import html
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -102,7 +103,34 @@ SOURCE_BADGES = {
     "finmarket.ru": ("ФМ", "Финмаркет", "#D68910"),
     "smart-lab.ru": ("СЛ", "smart-lab", "#C0392B"),
     "vedomosti.ru": ("Вед", "Ведомости", "#16A085"),
+    "moex.com": ("МБ", "Мосбиржа — сообщения биржи", "#A04000"),
+    "banki.ru": ("Бру", "Банки.ру", "#2471A3"),
+    "frankmedia.ru": ("Frank", "Frank Media", "#566573"),
 }
+
+# Правила для источников, где заголовок и описание устроены иначе, чем у новостных лент:
+#  • smart-lab — блоги: в описании пост целиком (портфель автора, «Человек и пароход»), и любая упомянутая бумага
+#    или слово «дивиденд» привязывали пост к портфелю или к «макро». Там — только по заголовку и без «макро».
+#  • moex.com — служебные сообщения биржи («О начале торгов…», «Об исключении ценных бумаг…»): сама биржа в них
+#    упомянута всегда, это не новость про акцию MOEX. Привязка — только к другим бумагам, без «макро».
+SOURCE_RULES = {
+    "smart-lab.ru": {"title_only": True, "no_macro": True},
+    "moex.com": {"skip": {"MOEX"}, "no_macro": True},
+}
+
+
+def _rule(source: str) -> dict:
+    return next((r for dom, r in SOURCE_RULES.items() if source == dom or source.endswith("." + dom)), {})
+
+
+def item_text(it) -> str:
+    """Текст новости для поиска (в нижнем регистре) с учётом правил источника."""
+    return (it.title if _rule(it.source).get("title_only") else f"{it.title} {it.summary}").lower()
+
+
+def item_refers(it, ticker: str, words) -> bool:
+    """Относится ли новость к бумаге — с правилами источника. Общая проверка для ленты, «Идей» и карточки."""
+    return ticker not in _rule(it.source).get("skip", ()) and refers(item_text(it), words)
 
 
 def source_badge(source: str) -> tuple[str, str, str]:
@@ -149,22 +177,22 @@ def parse_feed(data: bytes, source: str) -> list[NewsItem]:
     except ET.ParseError:
         return items
     for it in root.iter("item"):                       # RSS
-        title = (it.findtext("title") or "").strip()
+        title = html.unescape(it.findtext("title") or "").strip()      # «&quot;25&quot;» у Мосбиржи
         link = (it.findtext("link") or "").strip()
-        desc = re.sub(r"<[^>]+>", " ", it.findtext("description") or "").strip()
+        desc = html.unescape(re.sub(r"<[^>]+>", " ", it.findtext("description") or "")).strip()
         pub = _parse_date(it.findtext("pubDate")) or _parse_date(it.findtext("{http://purl.org/dc/elements/1.1/}date"))
         if title:
             items.append(NewsItem(title, link, source, pub, [], desc[:300]))
     if items:
         return items
     for e in root.iter(f"{ATOM}entry"):                # Atom
-        title = (e.findtext(f"{ATOM}title") or "").strip()
+        title = html.unescape(e.findtext(f"{ATOM}title") or "").strip()
         link = ""
         for l in e.findall(f"{ATOM}link"):
             if l.get("rel", "alternate") == "alternate" and l.get("href"):
                 link = l.get("href"); break
         summary = e.findtext(f"{ATOM}summary") or e.findtext(f"{ATOM}content") or ""
-        desc = re.sub(r"<[^>]+>", " ", summary).strip()
+        desc = html.unescape(re.sub(r"<[^>]+>", " ", summary)).strip()
         pub = _parse_date(e.findtext(f"{ATOM}updated")) or _parse_date(e.findtext(f"{ATOM}published"))
         if title:
             items.append(NewsItem(title, link, source, pub, [], desc[:300]))
@@ -176,7 +204,8 @@ GENERIC_WORDS = {"банк", "группа", "холдинг", "компания
                  "россия", "российский", "русский", "русская", "первый", "первая", "объединённая", "объединенная",
                  "акции", "фонд", "зпиф", "заблокированные", "интер", "новый", "новая", "центр",
                  "московская", "московский", "национальная", "национальный", "международная", "международный",
-                 "федеральная", "федеральный", "северная", "южная", "восточная", "западная", "городская"}
+                 "федеральная", "федеральный", "северная", "южная", "восточная", "западная", "городская",
+                 "технологии", "технология", "золото", "индекс", "облигации", "денежный", "рынок", "глобальный"}
 
 # Спорт — не про бумаги: «золото» чемпионата, «Единая лига ВТБ», «Газпром-Югра». Такие новости не привязываются ни к
 # бумагам, ни к макро. Основы ищутся подстрокой в тексте в нижнем регистре.
@@ -209,7 +238,10 @@ def build_keywords(positions, aliases: dict[str, list[str]]) -> dict[str, list[s
         words = list(explicit)
         # есть явные алиасы — имя из названия не нужно: первое слово бывает прилагательным («Московская Биржа»
         # ловила любую «московскую» новость — филармонию, метро, погоду)
-        parts = [] if explicit else [w for w in re.split(r"[\s\-—(),]+", p.name or "") if w]
+        # у фондов (БПИФ/ETF) название — набор общих слов («Технологии», «Золото», «Денежный рынок»): «технологии»
+        # в заметке про кино привязывали её к фонду. Для них — только тикер и явные алиасы
+        fund = getattr(p, "instrument_type", "") == "etf"
+        parts = [] if (explicit or fund) else [w for w in re.split(r"[\s\-—(),]+", p.name or "") if w]
         drop = {"пао", "оао", "ао", "ооо", "акции", "обыкновенные", "привилегированные", "им", "зпиф", "бпиф", "пиф"}
         parts = [w for w in parts if w.lower() not in drop]
         if parts:
@@ -252,11 +284,11 @@ def refers(text: str, words) -> bool:
 def match(items: list[NewsItem], keywords: dict[str, list[str]]) -> list[NewsItem]:
     out = []
     for it in items:
-        text = f"{it.title} {it.summary}".lower()
+        text = item_text(it)
         if offtopic(text):
             continue
-        hits = [t for t, words in keywords.items() if refers(text, words)]
-        if hits or any(k.lower() in text for k in MACRO_KEYWORDS):
+        hits = [t for t, words in keywords.items() if item_refers(it, t, words)]
+        if hits or (not _rule(it.source).get("no_macro") and any(k.lower() in text for k in MACRO_KEYWORDS)):
             it.matched = hits
             out.append(it)
     return out

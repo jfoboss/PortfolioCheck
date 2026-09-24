@@ -36,7 +36,8 @@ def _capture(monkeypatch, errors=()):
     class R:
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def read(self): return b"<rss/>"
+        def __init__(self): self.left = b"<rss/>"
+        def read(self, n=-1): out, self.left = self.left, b""; return out
 
     def fake(req, timeout=None, context=None):
         seen.append(context)
@@ -129,3 +130,21 @@ def test_mincifry_root_from_bundle_trusted_for_sites(tmp_path, monkeypatch):
     monkeypatch.setattr(pc, "_bundle_path", lambda: None)                 # бандла нет — только хранилище ОС / certifi
     assert not any("Russian Trusted" in str(c.get("subject")) for c in net.system_context().get_ca_certs())
     net._context.cache_clear()
+
+
+def test_fetch_gives_up_on_trickling_response(monkeypatch):
+    """Регресс: таймаут urlopen — на каждое чтение сокета, а не на весь ответ. Сайт, отдающий ленту по капле,
+    держал обновление новостей минутами. Теперь у ответа общий срок, и такая лента считается недоступной."""
+    import news
+    clock = iter(range(0, 10_000, 10))                  # каждый вызов часов — +10 с
+    monkeypatch.setattr(net.time, "monotonic", lambda: next(clock))
+
+    class Trickle:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self, n=-1): return b"<"               # по байту, бесконечно
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None, context=None: Trickle())
+    with pytest.raises(TimeoutError):
+        net.fetch("https://slow.example/rss")
+    items, failed = news.fetch_news(["https://slow.example/rss"], [], {})
+    assert items == [] and failed == ["https://slow.example/rss"]

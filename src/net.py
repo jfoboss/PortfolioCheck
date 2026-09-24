@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import ssl
+import time
 import urllib.error
 import urllib.request
 from functools import lru_cache
@@ -102,6 +103,21 @@ HEADERS = {"User-Agent": UA_DESKTOP,
            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"}
 
 
+TOTAL_S = 45        # на весь ответ: таймаут urlopen — на каждое чтение сокета, а не на весь запрос
+CHUNK = 64 * 1024
+
+
+def _read_all(r, deadline: float, url: str) -> bytes:
+    """Тело ответа порциями — с общим сроком. Сайт, отдающий ленту по капле, иначе держал обновление новостей
+    минутами: каждая порция успевала в таймаут сокета, а весь ответ не приходил."""
+    parts = []
+    while chunk := r.read(CHUNK):
+        parts.append(chunk)
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"ответ не пришёл целиком за {TOTAL_S} с: {url}")
+    return b"".join(parts)
+
+
 def fetch(url: str, timeout: int = 12) -> bytes:
     """Сайты (RSS, ISS, ЦБ) — с корнями из системного хранилища ОС, не с нашим бандлом для T-Invest.
     При 403 повторяем с заголовками обычного браузера; при ошибке TLS, кроме непрошедшей проверки сертификата, —
@@ -109,7 +125,7 @@ def fetch(url: str, timeout: int = 12) -> bytes:
     def once(headers: dict, ctx) -> bytes:
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
-            return r.read()
+            return _read_all(r, time.monotonic() + TOTAL_S, url)
 
     try:
         return once(HEADERS, system_context())

@@ -1,3 +1,4 @@
+import io
 from datetime import date, timedelta
 
 import history as H
@@ -46,10 +47,10 @@ def _rss(*items):
 
 class _Resp:
     def __init__(self, data):
-        self.data = data
+        self.data = io.BytesIO(data)
 
-    def read(self):
-        return self.data
+    def read(self, n=-1):
+        return self.data.read(n)
 
     def __enter__(self):
         return self

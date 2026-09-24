@@ -7,6 +7,9 @@ paths:
   - "make_icon.py"
   - "secrets_store.py"
   - "paths.py"
+  - "build_windows.py"
+  - "osutil.py"
+  - ".github/workflows/*"
 ---
 # Сборка, секреты, хранилище
 
@@ -20,3 +23,8 @@ paths:
 - **Хранилище** (`paths.py`): локально или iCloud Drive. Доступ к iCloud может запретить TCC (PermissionError) —
   тогда работаем локально и показываем баннер с кнопкой в «Конфиденциальность и безопасность».
 - Bundle id — из переменной `BUNDLE_ID` (по умолчанию нейтральный `io.github.portfoliocheck`).
+- **Windows**: `build_windows.py` (PyInstaller `--onedir`, zip), секреты — Credential Manager через `keyring`
+  (`secrets_store.IS_WIN`), папка — `%APPDATA%\PortfolioCheck`. Новый модуль добавляй **в обе** сборки —
+  `tests/test_platform.py` это проверяет. Бандл сертификатов собирается без консольного `openssl`
+  (`settings_dialog.server_chain`).
+- **CI** (`.github/workflows/ci.yml`): тесты на трёх ОС, `check_private.sh`, сборка Windows и запуск `.exe --demo`.

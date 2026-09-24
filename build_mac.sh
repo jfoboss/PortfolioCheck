@@ -42,10 +42,18 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --hidden-import secrets_store \
   --hidden-import strategy \
   --hidden-import config_migrate \
+  --hidden-import demo \
+  --hidden-import ui_common \
+  --hidden-import widgets \
+  --hidden-import osutil \
+  --hidden-import payouts \
+  --hidden-import workers \
+  --collect-submodules screens \
   --hidden-import wizard \
   --add-data "docs:docs" \
   --hidden-import portfolio_check \
   --add-data "config.yaml:." \
+  --add-data "demo_snapshot.json:." \
   --osx-bundle-identifier "${BUNDLE_ID:-io.github.portfoliocheck}" \
   app.py
 

@@ -6,10 +6,17 @@ paths:
   - "forecast.py"
   - "charts.py"
   - "diagnostics.py"
+  - "ui_common.py"
+  - "widgets.py"
+  - "workers.py"
+  - "screens/**"
 ---
 # Интерфейс (PySide6)
 
-- **Воркеры.** Сеть и тяжёлое — только в `QThread`. Новый атрибут-воркер окна добавляй в `MainWindow.WORKERS`:
+- **Где что.** `app.py` — каркас окна (сборка UI, меню, конвейер, действия); экраны — миксины в `screens/`
+  (`MainWindow` наследует их, состояние — атрибуты окна); воркеры — `workers.py`; мелкие виджеты — `widgets.py`;
+  токен, цвета, имя приложения — `ui_common.py`. Новый экранный метод клади в миксин своего экрана.
+- **Воркеры.** Сеть и тяжёлое — только в `QThread` (`workers.py`). Новый атрибут-воркер окна добавляй в `MainWindow.WORKERS`:
   `closeEvent` вызывает у них `requestInterruption()`, ждёт до 8 с и затем `terminate()`. Без этого — SIGABRT при
   выходе. Воркеры диалога настроек дожидаются в `SettingsDialog.closeEvent`. В цикле воркера проверяй
   `isInterruptionRequested()`.

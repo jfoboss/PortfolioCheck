@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QApplication,
 )
 
+from osutil import SECRET_STORE, SECRET_STORE_NAME, MACHINE, native_keys
 from portfolio_check import CLASS_LABELS, guess_reference, DEFAULT_REFERENCES
 import secrets_store as SEC
 
@@ -41,7 +42,7 @@ TOKEN_HOWTO = (
     "(или в приложении: Настройки → Токены API).<br>"
     "2. «Выпустить токен» → доступ <b>«Только для чтения»</b> → ко всем счетам или к нужному.<br>"
     "3. Скопируй токен сразу — он показывается один раз. Начинается с <code>t.</code><br>"
-    "4. Вставь его сюда. Хранится только в Keychain этого Mac, в файлах не появляется.<br>"
+    f"4. Вставь его сюда. Хранится только в {SECRET_STORE} этого {MACHINE}, в файлах не появляется.<br>"
     "<span style='color:gray'>Документация: <a href='https://developer.tbank.ru/invest/intro/intro/token'>developer.tbank.ru/invest/intro/intro/token</a></span>"
 )
 
@@ -128,25 +129,40 @@ def build_ca_bundle(out_path: Path) -> str:
     roots = Path(grpc.__file__).parent / "_cython" / "_credentials" / "roots.pem"
     if not roots.exists():
         raise RuntimeError(f"Не найден roots.pem у grpcio: {roots}")
-    try:
-        out = subprocess.run(
-            ["openssl", "s_client", "-connect", f"{INVEST_HOST}:443", "-servername", INVEST_HOST, "-showcerts"],
-            input=b"", capture_output=True, timeout=20,
-        ).stdout.decode("utf-8", "replace")
-    except FileNotFoundError as e:
-        raise RuntimeError("Не найден openssl в PATH") from e
-    certs = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", out, re.S)
-    if not certs:
+    chain = server_chain(INVEST_HOST)
+    if not chain:
         raise RuntimeError("Не удалось получить цепочку сертификатов от API (нет сети?)")
-    extra = certs[1:] if len(certs) > 1 else certs
-    text = roots.read_text(encoding="utf-8").rstrip("\n") + "\n" + "\n".join(extra) + "\n"
+    extra = chain[1:] if len(chain) > 1 else chain          # без листового сертификата сервера
+    text = roots.read_text(encoding="utf-8").rstrip("\n") + "\n" + "\n".join(pem for pem, _ in extra) + "\n"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text, encoding="utf-8")
-    subjects = []
-    for c in extra:
-        r = subprocess.run(["openssl", "x509", "-noout", "-subject"], input=c.encode(), capture_output=True)
-        subjects.append(r.stdout.decode().strip().replace("subject=", ""))
-    return "Добавлено из цепочки API:\n" + "\n".join(f"  • {s}" for s in subjects)
+    return "Добавлено из цепочки API:\n" + "\n".join(f"  • {subj}" for _, subj in extra)
+
+
+def server_chain(host: str, port: int = 443, timeout: int = 20) -> list[tuple[str, str]]:
+    """Цепочка сертификатов сервера [(PEM, subject)] средствами Python — без консольного openssl (его нет в Windows).
+    Проверку не делаем намеренно: цель — забрать промежуточные и корень (Минцифры), которых нет в roots.pem."""
+    import socket
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        with ctx.wrap_socket(sock, server_hostname=host) as tls:
+            if hasattr(tls, "get_unverified_chain"):              # Python 3.13+: список DER
+                raw = tls.get_unverified_chain()
+            else:                                                 # 3.10–3.12: тот же метод у внутреннего объекта
+                raw = tls._sslobj.get_unverified_chain()
+    out = []
+    for c in raw or []:
+        if isinstance(c, (bytes, bytearray)):
+            pem, subj = ssl.DER_cert_to_PEM_cert(bytes(c)), ""
+        else:
+            pem = c.public_bytes(ssl._ssl.ENCODING_PEM)
+            info = c.get_info()
+            subj = ", ".join(f"{k}={v}" for rdn in info.get("subject", ()) for k, v in rdn)
+        out.append((pem.strip(), subj or "сертификат"))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +249,24 @@ class TierWorker(QThread):
             self.done.emit(AI.openrouter_key_info(self.key, self.proxy))
         except Exception:  # noqa: BLE001
             self.done.emit({})
+
+
+class CheckWorker(QThread):
+    """Проверка модели по кнопке — в фоне: запрос к модели может идти десятки секунд, окно не должно замирать."""
+    done = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, provider: str, key: str, model: str, proxy: str, base_url: str, cache_dir, parent=None):
+        super().__init__(parent)             # родитель держит поток живым, даже если окно настроек отпустили
+        self.args = (provider, key, model, proxy, base_url)
+        self.cache_dir = cache_dir
+
+    def run(self) -> None:
+        import ai as AI
+        try:
+            self.done.emit(AI.check_model(*self.args, cache_dir=self.cache_dir))
+        except Exception as e:  # noqa: BLE001
+            self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
 
 
 class ModelPicker(QWidget):
@@ -425,7 +459,8 @@ class SettingsDialog(QDialog):
         form.addRow("Обновлять в фоне:", self.cmb_interval)
         form.addRow(self.cb_notify)
         form.addRow(self.cb_privacy)
-        form.addRow(_note("Переключить в любой момент: кнопка «Скрыть/Показать суммы» на панели или ⌘⇧H.", gray=True))
+        form.addRow(_note("Переключить в любой момент: кнопка «Скрыть/Показать суммы» на панели или "
+                            f"{native_keys('Ctrl+Shift+H')}.", gray=True))
         form.addRow(_note("Обновление — это один запрос портфеля к API; квота T-Invest на чтение большая, "
                           "но чаще раза в 15 минут смысла нет: цены ЗПИФ меняются редко, а частые взгляды на портфель "
                           "провоцируют лишние решения.", gray=True))
@@ -453,6 +488,9 @@ class SettingsDialog(QDialog):
         self.rb_local = QRadioButton("Только на этом Mac")
         self.rb_custom = QRadioButton("Другая папка (Dropbox, MEGAsync, …)")
         self.rb_icloud.setEnabled(paths.icloud_available())
+        if paths.DEMO_DIR is not None:                 # демо: временная папка, переключать некуда
+            for rb in (self.rb_icloud, self.rb_local, self.rb_custom):
+                rb.setEnabled(False)
         {"icloud": self.rb_icloud, "local": self.rb_local, "custom": self.rb_custom}[mode].setChecked(True)
         self.lbl_storage = _note(str(cur), gray=True)
         grp = QButtonGroup(self)
@@ -461,7 +499,7 @@ class SettingsDialog(QDialog):
         grp.buttonClicked.connect(self._storage_clicked)
         form.addRow(self.lbl_storage)
         form.addRow(_note("При переключении файлы копируются в новую папку. Токен API в общую папку не попадает — "
-                          "он в Keychain каждого Mac, вводится один раз на машину.", gray=True))
+                          f"он в {SECRET_STORE} каждого {MACHINE}, вводится один раз на машину.", gray=True))
         return w
 
     def _export_strategy(self) -> None:
@@ -873,6 +911,7 @@ class SettingsDialog(QDialog):
         self.ai_model = ModelPicker(cfg.get("model", "")); self.ai_model.setPlaceholderText("по умолчанию для провайдера")
         self.ai_model.b_reload.clicked.connect(lambda: self._load_models(force=True))
         self.ai_model.textChanged.connect(self._touch)
+        self.ai_model.textChanged.connect(self._ai_show_last_check)
         self.ai_proxy = QLineEdit(cfg.get("proxy", "")); self.ai_proxy.setPlaceholderText("http://host:port или socks5h://host:port — если нужен")
         self.ai_proxy.textChanged.connect(self._touch)
         self.ai_url = QLineEdit(cfg.get("base_url", "")); self.ai_url.setPlaceholderText("оставь пустым для стандартного")
@@ -897,12 +936,15 @@ class SettingsDialog(QDialog):
         form.addRow(self.cb_ai_auto)
         form.addRow("Не пересчитывать чаще, чем раз в:", self.sp_ai_interval)
         form.addRow(_note("Ответы кэшируются: при тех же новостях/данных запрос не уходит вообще, а при изменившихся — не чаще "
-                          "заданного интервала. Кнопка «ИИ-сводка» и ⌘⇧I пересчитывают принудительно.", gray=True))
+                          "заданного интервала. Кнопка «ИИ-сводка» и "
+                          f"{native_keys('Ctrl+Shift+I')} пересчитывают принудительно.", gray=True))
         lay.addLayout(form)
         row = QHBoxLayout()
         self.lbl_ai_key = QLabel()
         b_set, b_del, b_test = QPushButton("Задать ключ…"), QPushButton("Удалить"), QPushButton("Проверить")
-        b_test.setToolTip("Отправляет один короткий запрос — он тоже считается в лимите бесплатных моделей")
+        b_test.setToolTip("Один запрос: отвечает ли модель строгим JSON по схеме и по-русски — это нужно для сводок. "
+                          "Запрос считается в лимите бесплатных моделей; результат запоминается для каждой модели")
+        self.b_ai_test = b_test
         b_set.clicked.connect(self._ai_set_key); b_del.clicked.connect(self._ai_del_key); b_test.clicked.connect(self._ai_test)
         row.addWidget(self.lbl_ai_key, 1); row.addWidget(b_set); row.addWidget(b_del); row.addWidget(b_test)
         lay.addLayout(row)
@@ -928,7 +970,16 @@ class SettingsDialog(QDialog):
             self._ai_tier_info()
         if p == "openrouter" and not self.ai_model.models:
             self._load_models(force=False)
-        self._ai_refresh_key_label(); self._touch()
+        self._ai_refresh_key_label(); self._ai_show_last_check(); self._touch()
+
+    def _ai_show_last_check(self, *_) -> None:
+        """Результат прошлой проверки выбранной модели — без нового запроса."""
+        import ai as AI
+        import paths
+        if not hasattr(self, "lbl_ai_test"):
+            return
+        r = AI.last_check(self.ai_provider_key(), self.ai_model.text().strip(), paths.data_dir() / "cache")
+        self.lbl_ai_test.setText(AI.describe_check(r) if r else "")
 
     def _ai_tier_info(self) -> None:
         """Сколько бесплатных запросов в сутки доступно этому ключу: зависит от того, покупались ли кредиты."""
@@ -992,16 +1043,24 @@ class SettingsDialog(QDialog):
         self._ai_refresh_key_label(); self.accessChanged.emit()
 
     def _ai_test(self) -> None:
-        import ai as AI
+        import paths
         p = self.ai_provider_key(); key = self._ai_key()
         if not key:
             self.lbl_ai_test.setText("Сначала задай ключ."); return
-        self.lbl_ai_test.setText("Проверяю…"); QApplication.processEvents()
-        try:
-            ans = AI.ping(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(), self.ai_url.text().strip())
-            self.lbl_ai_test.setText(f"✓ Ответ модели: {ans.strip()[:80]}")
-        except Exception as e:  # noqa: BLE001
-            self.lbl_ai_test.setText(f"✗ {type(e).__name__}: {str(e)[:200]}")
+        if getattr(self, "_check_worker", None) is not None and self._check_worker.isRunning():
+            return
+        self.lbl_ai_test.setText("Проверяю модель (один запрос)…"); self.b_ai_test.setEnabled(False)
+        self._check_worker = CheckWorker(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(),
+                                         self.ai_url.text().strip(), paths.data_dir() / "cache", self)
+
+        def done(r):
+            import ai as AI
+            self.b_ai_test.setEnabled(True); self.lbl_ai_test.setText(AI.describe_check(r))
+
+        def failed(m):
+            self.b_ai_test.setEnabled(True); self.lbl_ai_test.setText(f"✗ {m}")
+        self._check_worker.done.connect(done); self._check_worker.failed.connect(failed)
+        self._check_worker.start()
 
     # ---- Доступ -------------------------------------------------------------
 
@@ -1039,7 +1098,7 @@ class SettingsDialog(QDialog):
 
     def _refresh_token_label(self) -> None:
         where = SEC.where(KEYRING_SERVICE, KEYRING_USER)
-        self.lbl_token.setText({"keychain": "Сохранён в Keychain ✓", "file": "Сохранён в защищённом файле (Keychain недоступен) ✓"}.get(where, "Не задан"))
+        self.lbl_token.setText({"session": "Только до выхода (демо-режим) ✓", "keychain": f"Сохранён в {SECRET_STORE} ✓", "file": f"Сохранён в защищённом файле ({SECRET_STORE_NAME} недоступен) ✓"}.get(where, "Не задан"))
 
     def _set_token(self) -> None:
         tok, ok = QInputDialog.getText(self, "Токен T-Invest API", "Read-only токен (начинается с «t.»):", QLineEdit.Password)
@@ -1047,7 +1106,7 @@ class SettingsDialog(QDialog):
             where = SEC.set(KEYRING_SERVICE, KEYRING_USER, tok.strip())
             if where == "file":
                 QMessageBox.information(self, "Токен сохранён в файле",
-                                        "Keychain не принял запись (подробности в «О программе» → лог). Токен сохранён в локальной "
+                                        f"{SECRET_STORE_NAME} не принял запись (подробности: Справка → Диагностика и лог). Токен сохранён в локальной "
                                         "папке с правами только для твоего пользователя — приложение работает.")
             self._refresh_token_label()
             self.accessChanged.emit()
@@ -1175,10 +1234,10 @@ class SettingsDialog(QDialog):
         return it.text().strip() if it else ""
 
     def closeEvent(self, event) -> None:
-        for name in ("_models_worker", "_tier_worker"):
+        for name, ms in (("_models_worker", 3000), ("_tier_worker", 3000), ("_check_worker", 60000)):
             wk = getattr(self, name, None)
             if wk is not None and wk.isRunning():
-                wk.wait(3000)              # каталог моделей — короткий запрос, дожидаемся, чтобы не убить живой поток
+                wk.wait(ms)                # дожидаемся, чтобы не уничтожить живой поток (SIGABRT)
         # На закрытие — дописать то, что ещё не ушло по таймеру
         if self._timer.isActive():
             self._timer.stop()

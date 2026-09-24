@@ -1,0 +1,85 @@
+# Тесты на трёх ОС и сборка для Windows. Сеть в тестах запрещена (tests/conftest.py), токены не нужны.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Системные библиотеки Qt (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Зависимости
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Тесты
+        run: python -m pytest -q
+      - name: Личные данные в исходниках
+        if: runner.os == 'Linux'
+        run: bash scripts/check_private.sh
+
+  build-windows:
+    needs: tests
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Зависимости и SDK T-Invest (с GitHub, как в setup_env.sh)
+        run: |
+          pip install --no-deps "git+https://github.com/RussianInvestments/invest-python.git"
+          pip install -r requirements.txt pillow
+      - name: Сборка
+        run: python build_windows.py
+      - name: Запуск собранного .exe в демо-режиме (дымовой тест)
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath dist\PortfolioCheck\PortfolioCheck.exe -ArgumentList "--demo" -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) { Write-Error "приложение завершилось с кодом $($p.ExitCode)"; exit 1 }
+          Stop-Process -Id $p.Id
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PortfolioCheck-windows
+          path: dist/PortfolioCheck-windows.zip
+
+  build-macos:
+    needs: tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Сборка .app и .dmg (как в релизе)
+        run: bash ./build_mac.sh
+      - name: Запуск собранного .app в демо-режиме (дымовой тест)
+        run: |
+          QT_QPA_PLATFORM=offscreen dist/PortfolioCheck.app/Contents/MacOS/PortfolioCheck --demo &
+          PID=$!
+          sleep 20
+          kill -0 $PID || { echo "приложение завершилось раньше времени"; exit 1; }
+          kill $PID
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PortfolioCheck-macos
+          path: dist/*.dmg

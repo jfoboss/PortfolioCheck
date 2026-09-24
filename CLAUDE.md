@@ -1,15 +1,20 @@
 # PortfolioCheck — инструкции для агента
 
-Настольное приложение для macOS (Python 3.12 + PySide6) — сверяет портфель в Т-Инвестициях (T-Invest API, gRPC)
+Настольное приложение для macOS и Windows (Python 3.12 + PySide6) — сверяет портфель в Т-Инвестициях (T-Invest API, gRPC)
 с правилами пользователя. Интерфейс, документация, комментарии и коммиты — **на русском**.
 
 ## Команды
 
 - Окружение: `./bootstrap_mac.sh` (Python 3.12 через Homebrew, `.venv`, зависимости); для тестов ещё
   `.venv/bin/pip install -r requirements-dev.txt`
-- Запуск из исходников: `.venv/bin/python app.py`
+- Запуск из исходников: `.venv/bin/python app.py`; на вымышленном портфеле без токена и без записи в настоящий
+  профиль — `.venv/bin/python app.py --demo` (для скриншотов и осмотра UI)
 - Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`)
-- Сборка: `./build_mac.sh` → `dist/PortfolioCheck.app` и `.dmg` (только на macOS)
+- Сборка: `./build_mac.sh` → `dist/PortfolioCheck.app` и `.dmg` (только на macOS); Windows — `python build_windows.py`
+  (на Windows) или CI: `.github/workflows/ci.yml` гоняет тесты на ubuntu/windows/macos и собирает zip под Windows;
+  релиз (GitHub → Releases → Publish с тегом `vX.Y`) — `.github/workflows/release.yml` прикладывает zip и dmg
+- Различия ОС — только через `osutil.py` (платформа, подписи сочетаний клавиш, шрифт) и `paths.py` (папки);
+  сочетания задавай как `Ctrl+…` (на macOS это ⌘), в подписях — `native_keys()`, не «⌘» руками
 - Перед каждым коммитом/push: `scripts/check_private.sh` — ищет личные данные в исходниках
 
 ## Жёсткие правила
@@ -58,7 +63,8 @@
 - Архитектура, модули, потоки данных, форматы кэша: `docs/ARCHITECTURE.md`
 - Почему сделано именно так (решения и отвергнутые варианты): `docs/DECISIONS.md`
 - История ошибок с причинами — читать перед правками в соответствующем модуле: `docs/LESSONS.md`
-- Что делать дальше: `docs/BACKLOG.md`
+- Что делать дальше: `docs/BACKLOG.md`; обсуждаемые крупные направления — `docs/CROSS_PLATFORM.md`,
+  `docs/TERMINAL_IDEAS.md`
 - Как тестировать, включая ручную проверку на macOS: `docs/TESTING.md`
 - Правила по областям кода подгружаются сами при работе с файлами: `.claude/rules/`
 

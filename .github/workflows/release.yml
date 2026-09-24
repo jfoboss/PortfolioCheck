@@ -1,0 +1,68 @@
+# Релиз: при публикации релиза собирает Windows-zip и macOS-dmg и прикладывает их к релизу.
+# Как выпустить: GitHub → Releases → Draft a new release → тег, например v1.2 (на main) → Publish.
+# Через ~5–10 минут в релизе появятся PortfolioCheck-windows.zip и PortfolioCheck-<версия>.dmg.
+# Подписи кода нет: Windows — «Неизвестный издатель», macOS — первый запуск правым кликом → «Открыть».
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Тег существующего релиза, к которому приложить сборки (например, v1.2)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Зависимости и SDK T-Invest
+        run: |
+          pip install --no-deps "git+https://github.com/RussianInvestments/invest-python.git"
+          pip install -r requirements.txt pillow
+      - name: Сборка
+        run: python build_windows.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/PortfolioCheck-windows.zip
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Сборка .app и .dmg
+        run: bash ./build_mac.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.dmg
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+      - name: Приложить сборки к релизу
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+          files: |
+            out/windows/*.zip
+            out/macos/*.dmg
+          fail_on_unmatched_files: true

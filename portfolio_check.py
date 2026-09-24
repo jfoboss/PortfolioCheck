@@ -41,8 +41,12 @@ def _bundle_path() -> Path | None:
         candidates.append(paths.data_dir() / "ca-bundle.pem")
     except Exception:  # noqa: BLE001
         pass
-    candidates += [Path.home() / "Library" / "Application Support" / "PortfolioCheck" / "ca-bundle.pem",
-                   Path(__file__).with_name("ca-bundle.pem")]
+    try:
+        import paths
+        candidates.append(paths.LOCAL_DIR / "ca-bundle.pem")
+    except Exception:  # noqa: BLE001
+        pass
+    candidates.append(Path(__file__).with_name("ca-bundle.pem"))
     for p in candidates:
         if p.exists():
             return p
@@ -385,25 +389,6 @@ def sector_label(code: str) -> str:
     return SECTOR_LABELS.get((code or "").lower(), code or "Не указана")
 
 
-# Классы, куда реально идут новые деньги — по ним и считается «доходность новых денег».
-BUY_CLASSES = ("equity_core", "real_estate_wh", "real_estate_other")
-
-
-def buy_side_yield(positions: list[Position], cfg: dict, fx: dict[str, Decimal] | None = None) -> tuple[float | None, int, Decimal]:
-    """Дивдоходность той части портфеля, которую пополняешь (ядро + ЗПИФ): (%, число позиций, их стоимость).
-    Классы берутся из правила «кандидаты на добор», если оно задано, иначе — BUY_CLASSES."""
-    classes = tuple(cfg.get("rules", {}).get("buy_candidates_classes") or ()) or BUY_CLASSES
-    classes = tuple(c for c in classes if c not in ("gold", "cash", "foreign", "ballast", "unclassified"))
-    fx = fx or {}
-    value = sum((p.value_rub for p in positions if p.cls in classes), Decimal(0))
-    income = sum((p.div_12m * p.quantity * fx.get(p.currency, Decimal(1))
-                  for p in positions if p.cls in classes and p.div_12m > 0), Decimal(0))
-    n = sum(1 for p in positions if p.cls in classes and p.value_rub > 0)
-    if value <= 0 or income <= 0:
-        return None, n, value
-    return float(income / value * 100), n, value
-
-
 def class_yields(positions: list[Position], fx: dict[str, Decimal] | None = None) -> dict[str, tuple[float, Decimal]]:
     """Текущая дивдоходность по классам: класс → (%, стоимость класса). Классы без выплат дают 0%."""
     fx = fx or {}
@@ -716,7 +701,7 @@ def main() -> None:
         import paths
         default_cfg = paths.data_dir() / "config.yaml"
     except Exception:  # noqa: BLE001
-        default_cfg = Path.home() / "Library" / "Application Support" / "PortfolioCheck" / "config.yaml"
+        default_cfg = Path("config.yaml")
     ap.add_argument("--config", default=str(default_cfg if default_cfg.exists() else "config.yaml"))
     ap.add_argument("--json", help="сохранить сырой снапшот позиций в JSON (для истории/диффа)")
     args = ap.parse_args()
@@ -750,10 +735,13 @@ def load_portfolio(token: str, cfg: dict) -> list[Position]:
         return fetch_positions(client, account_id, cfg)
 
 
-def fetch_income_estimate(client, positions: list[Position], fx: dict[str, Decimal] | None = None) -> Decimal:
+def fetch_income_estimate(client, positions: list[Position], fx: dict[str, Decimal] | None = None,
+                          payouts_out: list | None = None) -> Decimal:
     """Сумма выплат за последние 12 месяцев по всем позициям × количество, после НДФЛ 13%.
+    Тем же запросом (окно на год вперёд) собираются объявленные будущие выплаты для календаря — в payouts_out.
     Best-effort: бумаги, по которым API выплат не отдаёт (часть ЗПИФ, иностранные), просто не учитываются."""
     from datetime import timedelta, timezone
+    import payouts as PO
     _, _, _, money_to_decimal = _sdk()
     fx = fx or {}
     now = datetime.now(timezone.utc)
@@ -762,32 +750,38 @@ def fetch_income_estimate(client, positions: list[Position], fx: dict[str, Decim
         if not p.figi or p.instrument_type not in ("share", "etf"):
             continue
         try:
-            divs = client.instruments.get_dividends(figi=p.figi, from_=now - timedelta(days=365), to=now).dividends
+            divs = client.instruments.get_dividends(figi=p.figi, from_=now - timedelta(days=365),
+                                                    to=now + timedelta(days=365)).dividends
         except Exception:  # noqa: BLE001
             continue
-        per_share = sum((money_to_decimal(d.dividend_net) for d in divs), Decimal(0)) * Decimal("0.87")
+        # доход за 12 мес — только прошедшие отсечки (будущие объявленные — в календарь)
+        past = [d for d in divs if not getattr(d, "record_date", None) or d.record_date <= now]
+        per_share = sum((money_to_decimal(d.dividend_net) for d in past), Decimal(0)) * Decimal("0.87")
         p.div_12m = per_share
         rate = fx.get(p.currency, Decimal(1))
         total += per_share * p.quantity * rate
+        if payouts_out is not None:
+            payouts_out += PO.from_dividends(p, divs, float(rate), money_to_decimal, now.date())
     return total
 
 
-def load_portfolio_full(token: str, cfg: dict) -> tuple[list[Position], Decimal, object]:
-    """Позиции + оценка годового дохода + макро ЦБ (инфляция, ставка). Используется приложением."""
+def load_portfolio_full(token: str, cfg: dict) -> tuple[list[Position], Decimal, object, list]:
+    """Позиции + оценка годового дохода + макро ЦБ (инфляция, ставка) + выплаты для календаря. Для приложения."""
     Client, *_ = _sdk()
     _setup_grpc_roots()
     with Client(token) as client:
         account_id = pick_account(client, cfg.get("account", {}).get("id", ""))
         positions = fetch_positions(client, account_id, cfg)
         fx = fetch_fx(client, cfg.get("fx_fallback", {}))
-        income = fetch_income_estimate(client, positions, fx)
+        payouts: list = []
+        income = fetch_income_estimate(client, positions, fx, payouts)
     macro = None
     try:
         from macro import fetch_cbr_macro
         macro = fetch_cbr_macro(_bundle_path())
     except Exception as e:  # noqa: BLE001
         _log.warning("макро ЦБ не получено: %s", e)
-    return positions, income, macro
+    return positions, income, macro, payouts
 
 
 def save_snapshot(positions: list[Position], path: str) -> None:

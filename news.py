@@ -214,7 +214,8 @@ def build_keywords(positions, aliases: dict[str, list[str]]) -> dict[str, list[s
     Общие слова («Банк», «Группа») в одиночку не используются — берётся фраза из двух слов."""
     kw: dict[str, list[str]] = {}
     for p in positions:
-        words = list(aliases.get(p.ticker, []))
+        explicit = list(aliases.get(p.ticker, []))
+        words = list(explicit)
         parts = [w for w in re.split(r"[\s\-—(),]+", p.name or "") if w]
         drop = {"пао", "оао", "ао", "ооо", "акции", "обыкновенные", "привилегированные", "им", "зпиф", "бпиф", "пиф"}
         parts = [w for w in parts if w.lower() not in drop]
@@ -227,15 +228,28 @@ def build_keywords(positions, aliases: dict[str, list[str]]) -> dict[str, list[s
                 words.append(first)
         if p.ticker and p.ticker.isalpha() and len(p.ticker) >= 4:
             words.append(p.ticker)
-        kw[p.ticker] = sorted({w for w in words if len(w) >= 4}, key=str.lower)
+        # короткие слова из названия — мусор («АО», «ГК»), но явные алиасы («МТС», «ВТБ», «VK») — нет:
+        # раньше они отбрасывались, и новости этих компаний к бумагам не привязывались
+        kw[p.ticker] = sorted({w for w in words if len(w) >= 4 or w in explicit}, key=str.lower)
     return kw
+
+
+SHORT_WORD = 4   # короче — ищем только целым словом: «мтс» не должно находиться внутри других слов
+
+
+def mentions(text: str, w: str) -> bool:
+    """Упоминается ли ключ w в тексте (text — уже в нижнем регистре)."""
+    w = w.lower()
+    if len(w) >= SHORT_WORD:
+        return w in text                       # длинные — подстрокой: алиасы-основы вроде «золот» так и задуманы
+    return re.search(rf"(?<!\w){re.escape(w)}(?!\w)", text) is not None
 
 
 def match(items: list[NewsItem], keywords: dict[str, list[str]]) -> list[NewsItem]:
     out = []
     for it in items:
         text = f"{it.title} {it.summary}".lower()
-        hits = [t for t, words in keywords.items() if any(w.lower() in text for w in words)]
+        hits = [t for t, words in keywords.items() if any(mentions(text, w) for w in words)]
         if hits or any(k.lower() in text for k in MACRO_KEYWORDS):
             it.matched = hits
             out.append(it)

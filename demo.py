@@ -173,6 +173,25 @@ def fill_caches(d: Path, positions) -> None:
                                  float(p.quantity), round(per_year / n * 1.05 * float(p.quantity), 2), "declared"))
     PO.save(PO.with_expected(raw, today), cache)
 
+    # факторы для сценариев: индекс — среднее движение акций демо-портфеля плюс шум (иначе беты были бы нулевыми),
+    # доллар — своё блуждание. Сеть в демо не используется.
+    import factors as FA
+    import math as _m
+    eq = [series[p.figi] for p in positions if p.cls in ("equity_core", "equity_spec") and p.figi in series]
+    if eq:
+        rnd = random.Random("IMOEX")
+        n = min(len(s_) for s_ in eq)
+        eq = [s_[-n:] for s_ in eq]
+        level, idx = 2800.0, []
+        for k in range(n):
+            if k:
+                r = sum(_m.log(s_[k][1] / s_[k - 1][1]) for s_ in eq) / len(eq)
+                level *= _m.exp(r + rnd.gauss(0, 0.004))
+            idx.append((eq[0][k][0], round(level, 2)))
+        (cache / f"candles_{FA.IMOEX}.json").write_text(json.dumps(idx), encoding="utf-8")
+        usd = _candles("USDRUB", "cash", 90.0)[-n:]
+        (cache / f"candles_{FA.USDRUB}.json").write_text(json.dumps(usd), encoding="utf-8")
+
     # история стоимости: снапшот на первое число последних 12 месяцев — текущий состав по ценам тех дней,
     # масштабированный под пополнения (раньше позиций было меньше)
     rows = json.loads(SNAPSHOT.read_text(encoding="utf-8"))

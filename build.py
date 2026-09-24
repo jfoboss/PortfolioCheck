@@ -22,8 +22,9 @@ import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+_QAPP = None
 HIDDEN = ["settings_dialog", "forecast", "charts", "macro", "paths", "history", "news", "screener", "diagnostics", "ai",
-          "secrets_store", "strategy", "config_migrate", "demo", "ui_common", "widgets", "workers", "osutil", "payouts", "attribution", "export", "risk",
+          "secrets_store", "strategy", "config_migrate", "demo", "ui_common", "widgets", "workers", "osutil", "payouts", "attribution", "export", "risk", "alerts", "factors", "scenarios", "consensus",
           "wizard", "portfolio_check"]
 KEYRING_BACKENDS = {"win32": ["keyring.backends.Windows"], "linux": ["keyring.backends.SecretService"]}
 DATA = ["icon.svg", "config.yaml", "demo_snapshot.json", "docs"]
@@ -59,7 +60,8 @@ def render_icon(png: Path, size: int = 256) -> Path:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtGui import QGuiApplication, QImage, QPainter, QColor
     from PySide6.QtSvg import QSvgRenderer
-    app = QGuiApplication.instance() or QGuiApplication(["icon"])  # noqa: F841 — нужен для QPainter
+    global _QAPP
+    _QAPP = QGuiApplication.instance() or QGuiApplication(["icon"])   # должен жить, пока рисует QPainter
     img = QImage(size, size, QImage.Format_ARGB32); img.fill(QColor(0, 0, 0, 0))
     p = QPainter(img); p.setRenderHint(QPainter.Antialiasing); QSvgRenderer(str(ROOT / "icon.svg")).render(p); p.end()
     png.parent.mkdir(parents=True, exist_ok=True)

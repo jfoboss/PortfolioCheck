@@ -34,7 +34,17 @@ def test_v0_customized_list_is_kept_as_is(monkeypatch):
 
 def test_no_screener_section_stays_absent():
     cfg, notes = CM.migrate({"instruments": {"SBERP": "equity_core"}})
-    assert cfg == {"config_version": 1, "instruments": {"SBERP": "equity_core"}} and notes
+    assert cfg == {"config_version": CM.CURRENT_VERSION, "instruments": {"SBERP": "equity_core"},
+                   "alerts": CM.V2_DEFAULT_ALERTS} and notes
+
+
+def test_v2_adds_default_alerts_once():
+    """v2: оповещения по умолчанию записываются в конфиг явно; свои правила пользователя не трогаются."""
+    cfg, _ = CM.migrate({"config_version": 1})
+    assert cfg["alerts"] == CM.V2_DEFAULT_ALERTS and cfg["alerts"] is not CM.V2_DEFAULT_ALERTS
+    mine = [{"kind": "price_above", "ticker": "SBERP", "value": 400, "on": True}]
+    cfg, _ = CM.migrate({"config_version": 1, "alerts": mine})
+    assert cfg["alerts"] == mine
 
 
 def test_newer_config_is_not_touched():

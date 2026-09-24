@@ -4,7 +4,6 @@ screens/privacy.py — режим «глазик»: скрытие сумм. М�
 from __future__ import annotations
 
 
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QGraphicsBlurEffect
 from PySide6.QtWidgets import (
     QTableWidget, QTextEdit, QHeaderView, QSystemTrayIcon, QStyle,

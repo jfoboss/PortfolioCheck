@@ -23,6 +23,8 @@ def full_cfg(demo_cfg, demo_positions):
     cfg["ai"] = {"provider": "openrouter", "model": "a/b:free", "proxy": "", "base_url": "", "auto": False,
                  "min_interval_h": 12}
     cfg["refresh"] = {"on_launch": False, "interval_min": 30, "privacy_on_launch": False}
+    cfg["alerts"] = [{"kind": "price_below", "ticker": "LKOH", "value": 5000.0, "on": True},
+                     {"kind": "news", "ticker": "", "value": 0.0, "on": False}]
     cfg["setup_done"] = True
     cfg["auto_classify"] = False
     cfg["auto_classified"] = ["PHOR"]
@@ -40,7 +42,7 @@ def _collect(qapp, cfg, isolated_home):
 
 # разделы, которыми владеет окно настроек; прогноз (forecast) окно не трогает — его сохраняет главное окно
 SECTIONS = ("config_version", "account", "targets", "instruments", "reference_tickers", "blocked_tickers",
-            "fx_fallback", "screener", "news", "ai", "setup_done", "strategy_preset", "auto_classify", "auto_classified")
+            "fx_fallback", "screener", "news", "ai", "setup_done", "strategy_preset", "auto_classify", "auto_classified", "alerts")
 
 
 def test_collect_roundtrip_keeps_everything(qapp, full_cfg, isolated_home):

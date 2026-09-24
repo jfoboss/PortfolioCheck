@@ -7,8 +7,6 @@ settings_dialog.py — окно «Настройки» (немодальное, 
 
 from __future__ import annotations
 
-import re
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal, QThread
@@ -408,6 +406,7 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._tab_fx(), "Курсы")
         self.tabs.addTab(self._tab_news(), "Новости")
         self.tabs.addTab(self._tab_screener(), "Скринер")
+        self.tabs.addTab(self._tab_alerts(), "Оповещения")
         self.tabs.addTab(self._tab_ai(), "ИИ")
         self.tabs.addTab(self._tab_access(), "Доступ")
 
@@ -671,6 +670,49 @@ class SettingsDialog(QDialog):
         lay.addWidget(self.t_frozen)
         lay.addLayout(_plus_minus(self.t_frozen, lambda: self._add_text_row(self.t_frozen, 2), self._touch))
         return w
+
+    # ---- Оповещения ----------------------------------------------------------
+
+    def _tab_alerts(self) -> QWidget:
+        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(20, 16, 20, 16)
+        lay.addWidget(_note("Оповещения приходят системным уведомлением, <b>пока программа открыта</b> — после каждого "
+                            "обновления портфеля, ленты и скринера. Каждое событие сообщается один раз; условие, которое "
+                            "перестало выполняться и выполнилось снова, сообщит повторно. Тикер можно оставить пустым "
+                            "для «до отсечки» (любая бумага) и «новость» (любая бумага портфеля).", rich=True))
+        self.t_alerts = _table(["Условие", "Тикер", "Значение", "Вкл."], stretch_col=0)
+        for rule in self.cfg.get("alerts") or []:
+            self._add_alert_row(rule)
+        self._watch_table(self.t_alerts)
+        lay.addWidget(self.t_alerts)
+        lay.addLayout(_plus_minus(self.t_alerts, lambda: (self._add_alert_row({"kind": "price_above", "on": True}),
+                                                          self._touch()), self._touch))
+        return w
+
+    def _add_alert_row(self, rule: dict) -> None:
+        import alerts as AL
+        from PySide6.QtWidgets import QCheckBox, QComboBox
+        r = self.t_alerts.rowCount(); self.t_alerts.insertRow(r)
+        kind = QComboBox()
+        for k, label in AL.KINDS.items():
+            kind.addItem(label, k)
+        kind.setCurrentIndex(max(0, kind.findData(rule.get("kind", "price_above"))))
+        kind.currentIndexChanged.connect(self._touch)
+        self.t_alerts.setCellWidget(r, 0, kind)
+        self.t_alerts.setItem(r, 1, _cell(str(rule.get("ticker") or "").upper()))
+        val = QDoubleSpinBox(); val.setRange(0, 10_000_000); val.setDecimals(2); val.setFrame(False)
+        val.setValue(float(rule.get("value") or 0)); val.valueChanged.connect(self._touch)
+        self.t_alerts.setCellWidget(r, 2, val)
+        on = QCheckBox(); on.setChecked(bool(rule.get("on", True))); on.toggled.connect(self._touch)
+        self.t_alerts.setCellWidget(r, 3, on)
+
+    def _collect_alerts(self) -> list[dict]:
+        out = []
+        for r in range(self.t_alerts.rowCount()):
+            out.append({"kind": self.t_alerts.cellWidget(r, 0).currentData(),
+                        "ticker": self._text(self.t_alerts, r, 1).upper(),
+                        "value": round(self.t_alerts.cellWidget(r, 2).value(), 4),
+                        "on": self.t_alerts.cellWidget(r, 3).isChecked()})
+        return out
 
     def _add_text_row(self, table: QTableWidget, cols: int) -> None:
         r = table.rowCount(); table.insertRow(r)
@@ -1205,6 +1247,7 @@ class SettingsDialog(QDialog):
             if t and words:
                 aliases[t] = words
         cfg["news"] = {"feeds": feeds, "aliases": aliases}
+        cfg["alerts"] = self._collect_alerts()
         cfg["ai"] = {"provider": self.ai_provider_key(), "model": self.ai_model.text().strip(),
                      "proxy": self.ai_proxy.text().strip(), "base_url": self.ai_url.text().strip(),
                      "auto": self.cb_ai_auto.isChecked(), "min_interval_h": self.sp_ai_interval.value()}

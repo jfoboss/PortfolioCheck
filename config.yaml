@@ -3,7 +3,7 @@
 # Потом всё правится в Настройках; руками этот файл редактировать не обязательно.
 # Рабочая копия лежит в ~/Library/Application Support/PortfolioCheck/ (или в iCloud Drive, если выбрано).
 
-config_version: 1        # версия формата; старые конфиги программа обновляет сама (копия — config.yaml.v<N>.bak)
+config_version: 2        # версия формата; старые конфиги программа обновляет сама (копия — config.yaml.v<N>.bak)
 
 account:
   id: ""                 # пусто — первый брокерский счёт; иначе id из «Настройки → Доступ»
@@ -39,3 +39,10 @@ screener:
 refresh:
   on_launch: true
   interval_min: 60
+
+# Оповещения, пока программа открыта (Настройки → Оповещения). Виды: price_above, price_below, yield_above,
+# days_to_cut (дней до последнего дня покупки), corridor (класс вне коридора), news (свежая новость по бумаге).
+alerts:
+  - {kind: corridor, ticker: "", value: 0, "on": true}
+  - {kind: days_to_cut, ticker: "", value: 7, "on": true}
+  - {kind: news, ticker: "", value: 0, "on": false}

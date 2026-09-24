@@ -480,7 +480,6 @@ def price_growth_target_weighted(positions: list[Position], cfg: dict, changes: 
         weights[cls] = (float(rng["min"]) + float(rng["max"])) / 2
     if not weights:
         return None, [], 0
-    total_w = sum(weights.values()) or 1.0
     g = class_price_growth_values(positions, values) if values is not None else class_price_growth(positions, changes, period)
 
     def growth_of(cls: str) -> tuple[float, bool]:

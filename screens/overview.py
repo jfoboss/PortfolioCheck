@@ -8,7 +8,7 @@ from decimal import Decimal
 from PySide6.QtCore import Qt
 import re
 from PySide6.QtWidgets import (
-    QTableWidget, QTableWidgetItem, QHeaderView,
+    QTableWidget, QHeaderView,
 )
 
 import portfolio_check as pc
@@ -87,6 +87,9 @@ class RenderMixin:
                 parts += [f"### {title}", ""] + lines + [""]
         if n_alerts == 0:
             parts.append("Сигналов нет — всё по правилам.")
+        recent = getattr(self, "_alert_log", [])[-5:]
+        if recent:
+            parts += ["", "### Оповещения за сессию", ""] + [f"- {t}" for t in reversed(recent)]
         self.txt_signals.setMarkdown("\n".join(parts))
         self.lbl_signals_title.setText(f"<b>Сигналы ({n_alerts})</b>" if n_alerts else "<b>Сигналы</b> — всё по правилам")
         self._last_alerts = n_alerts
@@ -156,6 +159,7 @@ class RenderMixin:
         self.render_payouts()                      # суммы календаря тоже подчиняются «глазику»
         self.render_attribution()
         self.render_risk()
+        self.render_scenarios()
 
     @staticmethod
     def _fill(table: QTableWidget, rows: list) -> None:

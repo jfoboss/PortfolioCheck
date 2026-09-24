@@ -46,7 +46,8 @@ def test_ca_bundle_built_without_openssl(monkeypatch, tmp_path):
     leaf = ("-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----", "CN=*.tinkoff.ru")
     root = ("-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----", "CN=Russian Trusted Root CA")
     monkeypatch.setattr(SD, "server_chain", lambda host: [leaf, root])
-    monkeypatch.setattr(SD.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("вызван subprocess")))
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("вызван subprocess")))
     out = tmp_path / "ca-bundle.pem"
     msg = SD.build_ca_bundle(out)
     text = out.read_text(encoding="utf-8")

@@ -14,11 +14,11 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QFont
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from osutil import SECRET_STORE, mono_font
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QDialog
 
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 LOG_NAME = "portfolio-check.log"
 log = logging.getLogger("portfolio")
 
@@ -122,6 +122,20 @@ class ConnectivityWorker(QThread):
             from macro import fetch_cbr_macro
             m = fetch_cbr_macro(self.bundle); return f"{m.period}: инфляция {m.inflation}%, ставка {m.key_rate}%"
         check("ЦБ РФ (инфляция)", cbr)
+
+        def factor(url_tmpl, parse, what):
+            def run():
+                from datetime import date, timedelta
+                from news import _fetch
+                t = date.today(); f = t - timedelta(days=10)
+                url = url_tmpl.format(frm=f"{f:%d/%m/%Y}" if "cbr" in url_tmpl else f.isoformat(),
+                                      till=f"{t:%d/%m/%Y}" if "cbr" in url_tmpl else t.isoformat(), start=0)
+                rows = parse(_fetch(url))
+                return f"{what}: {len(rows)} значений, последнее {rows[-1][0]} = {rows[-1][1]:,.2f}" if rows else "пусто"
+            return run
+        import factors as FA
+        check("MOEX ISS (индекс для сценариев)", factor(FA.ISS_URL, FA.parse_iss, "IMOEX"))
+        check("ЦБ РФ (курс доллара для сценариев)", factor(FA.CBR_URL, FA.parse_cbr, "USD/RUB"))
 
         def fundamentals():
             import portfolio_check as pc

@@ -10,7 +10,8 @@
   `pip install -r requirements-dev.txt`
 - Запуск из исходников: `.venv/bin/python app.py`; на вымышленном портфеле без токена и без записи в настоящий
   профиль — `.venv/bin/python app.py --demo` (для скриншотов и осмотра UI)
-- Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`)
+- Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`);
+  статическая проверка: `.venv/bin/python -m pyflakes *.py screens/*.py tests/*.py` — должна быть пустой (CI падает)
 - Сборка: macOS — `./build_mac.sh` → `.app` и `.dmg`; Windows и Linux — `python build.py` (на своей ОС) → zip /
   tar.gz. CI (`.github/workflows/ci.yml`): тесты на ubuntu/windows/macos, сборки всех трёх ОС и запуск собранной
   программы в демо. Релиз (GitHub → Releases → Publish с тегом `vX.Y`) — `release.yml` прикладывает dmg, zip, tar.gz

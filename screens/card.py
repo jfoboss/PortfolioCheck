@@ -155,6 +155,7 @@ class SecurityCard(QDialog):
             mark = {"positive": "▲ позитив", "negative": "▼ негатив"}.get(d["ai"].get("sentiment"), "■ нейтрально")
             html += ["<h3>ИИ по новостям</h3>", f"{mark}. {d['ai'].get('note', '')}",
                      "<br><span style='color:gray'>Оценка заголовков моделью, не рекомендация.</span>"]
+        html += self._consensus_html(d)
         self.info.setHtml("".join(html) or "<p style='color:gray'>Данных о бумаге пока нет.</p>")
 
         STATUS = {"declared": "объявлена", "expected": "ожидается*", "paid": "была"}
@@ -163,6 +164,55 @@ class SecurityCard(QDialog):
         self.win._fill(self.tbl_pay, rows)
         self.win._fill(self.tbl_news, [([it.title, it.published.strftime("%d.%m %H:%M") if it.published else "",
                                          it.source], None) for it in d["news"][:50]])
+
+    # ---- консенсус аналитиков (п. 26): справочно, с кэшем на сутки, загрузка в фоне ----
+
+    def _forecast_uid(self, d) -> str:
+        return (getattr(d["idea"], "uid", "") if d["idea"] else "") or (d["pos"].figi if d["pos"] else "")
+
+    def _consensus_html(self, d) -> list[str]:
+        import consensus as CS
+        import paths
+        uid = self._forecast_uid(d)
+        if not uid or uid.startswith("demo-") or paths.DEMO_DIR is not None:
+            return []
+        cache = paths.data_dir() / "cache"
+        data = getattr(self, "_forecast", None) or CS.load(cache, uid)
+        if data is None:
+            self._start_forecast(uid, cache)
+            return ["<p style='color:gray'>Консенсус аналитиков загружается…</p>"]
+        if data.get("error"):
+            return [f"<p style='color:gray'>Консенсус аналитиков недоступен: {data['error']}</p>"]
+        c = data.get("consensus")
+        if not c:
+            return ["<p style='color:gray'>Консенсус-прогноза аналитиков по бумаге нет.</p>"]
+        f = lambda v: "—" if v is None else f"{v:,.2f}"
+        rel = f" ({c['change_rel']:+.1f}% к текущей)" if c.get("change_rel") is not None else ""
+        out = ["<h3>Консенсус аналитиков — справочно</h3>",
+               f"{c['recommendation']} · целевая цена <b>{f(c['target'])}</b>{rel} · разброс {f(c['min'])}–{f(c['max'])}",
+               "<br><span style='color:gray'>Мнения брокерских домов по данным T-Invest, не рекомендация программы. "
+               "Решение — за тобой.</span>"]
+        ts = [t for t in data.get("targets") or [] if t.get("target") is not None][:6]
+        if ts:
+            out.append("<br>" + "; ".join(f"{t['company']}: {f(t['target'])} ({t['recommendation']}, {t['date']})"
+                                          for t in ts))
+        return out
+
+    def _start_forecast(self, uid: str, cache) -> None:
+        from ui_common import get_token
+        from workers import ForecastWorker
+        token = get_token()
+        if not token or (getattr(self, "_fw", None) is not None and self._fw.isRunning()):
+            return
+        self._fw = ForecastWorker(token, uid, cache, self)
+        self._fw.done.connect(lambda data: (setattr(self, "_forecast", data), self.refresh()))
+        self._fw.start()
+
+    def closeEvent(self, e) -> None:
+        fw = getattr(self, "_fw", None)
+        if fw is not None and fw.isRunning():
+            fw.wait(15000)                           # не уничтожать живой поток (SIGABRT)
+        super().closeEvent(e)
 
     def _open_news(self, r: int, _c: int) -> None:
         from PySide6.QtCore import QUrl

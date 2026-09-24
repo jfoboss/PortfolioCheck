@@ -41,6 +41,7 @@ class HistoryMixin:
             log.info("свечей нет по %d позициям: %s", len(empty), ", ".join(empty[:12]))
         log.info("свечи загружены: инструментов с историей %d", sum(1 for v in self.period_changes.values() if v.get("year") is not None))
         self.render_heatmap(); self.render_history()
+        self.start_factors()                       # индекс и доллар для сценариев (без токена, раз в сутки)
 
     def render_heatmap(self) -> None:
         btn = self.heat_group.checkedButton()

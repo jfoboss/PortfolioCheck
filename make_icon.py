@@ -2,7 +2,6 @@
 Дальше на Mac: iconutil -c icns icon.iconset -o PortfolioCheck.icns (build_mac.sh делает это сам)."""
 import sys
 from pathlib import Path
-from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QGuiApplication, QImage, QPainter, QColor
 from PySide6.QtSvg import QSvgRenderer
 

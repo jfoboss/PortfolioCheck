@@ -298,3 +298,25 @@ def test_gmkn_found_by_short_name_and_cases():
     assert N.refers("совет директоров «норильского никеля» рекомендовал выплату", kw)
     assert N.refers("«норильский никель» отчитался за полугодие", kw)
     assert not N.refers("в норильске похолодало", kw)
+
+
+def test_phrase_keys_across_quotes_and_hyphens():
+    """Регресс: ключ из нескольких слов не находился, если в тексте между словами кавычки или дефис —
+    «АФК «Система»», «Т-Технологии», «Банк «Санкт-Петербург»» к бумагам не привязывались."""
+    kw = N.build_keywords([NS(ticker="AFKS", name="АФК Система"), NS(ticker="BSPB", name="Банк Санкт-Петербург")], {})
+    assert N.refers("акции афк «система» выросли", kw["AFKS"])
+    assert N.refers("банк «санкт-петербург» выплатит дивиденды", kw["BSPB"])
+    assert N.mentions("«т-технологии» отчитались", "Т Технологии") and N.mentions("клиенты т-банка", "Т-Банк")
+    assert not N.refers("система быстрых платежей", kw["AFKS"])
+
+
+def test_brand_aliases_and_abbreviation_names():
+    """Регресс: бумаги, у которых в СМИ бренд или аббревиатура, а не название («ММК», «МКБ», «Россети»), не
+    находились; название-аббревиатура из трёх букв («ЛСР», «ТМК») отбрасывалось; у SBER не было алиасов SBERP —
+    «Сбербанк» не находился по ключу «Сбер»."""
+    pos = [NS(ticker="MAGN", name="Магнитогорский металлургический комбинат"), NS(ticker="SBER", name="Сбер Банк"),
+           NS(ticker="ABCD", name="АБВ")]
+    kw = N.build_keywords(pos, N.DEFAULT_ALIASES)
+    assert N.refers("ммк снизил выплаты", kw["MAGN"]) and N.refers("сбербанк запустил сервис", kw["SBER"])
+    assert kw["ABCD"] == ["ABCD", "АБВ"] and N.refers("группа «абв» отчиталась", kw["ABCD"])
+    assert not N.refers("пик продаж пришёлся на август", N.DEFAULT_ALIASES["PIKK"])

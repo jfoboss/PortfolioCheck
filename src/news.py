@@ -99,11 +99,19 @@ DEFAULT_ALIASES = {
     "FLOT": ["Совкомфлот"], "MTSS": ["МТС"], "MGKL": ["МГКЛ", "Мосгорломбард"], "MOEX": ["Мосбиржа", "Московская биржа"],
     "VKCO": ["VK", "ВКонтакте"], "VTBR": ["ВТБ"], "YDEX": ["Яндекс"], "AGRO": ["Русагро", "РусАгро"],
     "GMKN": ["Норникель", "Норильский никель", "Норильского никеля"],   # имя на прилагательное: «норильского» само не найдётся
+    # в СМИ — бренд или аббревиатура, а не название из T-Invest («Магнитогорский металлургический комбинат» → «ММК»)
+    "MAGN": ["ММК", "Магнитогорский металлургический"], "CBOM": ["МКБ", "Московский кредитный банк"],
+    "FEES": ["Россети", "ФСК"], "HEAD": ["HeadHunter", "Хэдхантер", "hh.ru"], "X5": ["X5", "ИКС 5"],
+    "DELI": ["Делимобиль"], "WUSH": ["Whoosh", "Вуш"], "ENPG": ["En+", "Эн+"], "T": ["Т-Технологии", "Т-Банк", "Тинькофф"],
+    "UGLD": ["ЮГК", "Южуралзолото"], "LSRG": ["ЛСР"], "TRMK": ["ТМК"], "PIKK": ["ГК ПИК", "Группа ПИК", "ПИК СЗ"],
     "GLDRUB_TOM": ["золот"], "SLVRUB_TOM": ["серебр"],
     # валюты — только про курс: слово «доллар» из названия цепляло «$11 млрд» и «108 долларов за баррель»
     "USD000UTSTOM": ["курс доллара", "доллара к рублю", "доллар к рублю", "курс рубля к доллару", "USD/RUB"],
     "EUR_RUB__TOM": ["курс евро", "евро к рублю", "EUR/RUB"], "CNYRUB_TOM": ["курс юаня", "юаня к рублю", "CNY/RUB"],
 }
+# обыкновенные — те же алиасы, что у привилегированных: у SBER из названия «Сбер Банк» ключ «Сбер», а он «Сбербанк» не ловит
+for _pref in ("SBERP", "TATNP", "SNGSP"):
+    DEFAULT_ALIASES.setdefault(_pref[:-1], DEFAULT_ALIASES[_pref])
 # Короткие метки источников (для узкой колонки) и их цвета
 SOURCE_BADGES = {
     "interfax.ru": ("ИФ", "Интерфакс", "#1F77B4"),
@@ -276,7 +284,9 @@ def build_keywords(positions, aliases: dict[str, list[str]]) -> dict[str, list[s
         parts = [] if (explicit or fund) else [w for w in re.split(r"[\s\-—(),]+", p.name or "") if w]
         drop = {"пао", "оао", "ао", "ооо", "акции", "обыкновенные", "привилегированные", "им", "зпиф", "бпиф", "пиф"}
         parts = [w for w in parts if w.lower() not in drop]
-        if parts:
+        if len(parts) == 1 and len(parts[0]) == 3 and parts[0].isupper():
+            words.append(parts[0]); explicit.append(parts[0])   # аббревиатура-название: «ЛСР», «ТМК», «ЮГК»
+        elif parts:
             first = parts[0]
             if first.lower() in GENERIC_WORDS or len(first) < 4 or _adjective(first):
                 # общие слова и прилагательные — вместе с первым значимым: «Банк Санкт», «Группа компаний Самолет»
@@ -326,8 +336,17 @@ def mentions(text: str, w: str) -> bool:
     if len(w) >= SHORT_WORD:
         text = _NOT_COMPANY.sub(" ", text)
         ends = "" if _adjective(w) else LONG_ENDINGS
-        return re.search(rf"(?<!\w){re.escape(_stem(w))}{ends}(?!\w)", text) is not None
-    return re.search(rf"(?<!\w){re.escape(w)}{CASE_ENDINGS}(?!\w)", text) is not None
+        return re.search(rf"(?<!\w){_joined(_stem(w))}{ends}(?!\w)", text) is not None
+    return re.search(rf"(?<!\w){_joined(w)}{CASE_ENDINGS}(?!\w)", text) is not None
+
+
+# Между словами ключа в тексте бывают кавычки и дефис: «АФК «Система»», «Т-Технологии», «Банк «Санкт-Петербург»»
+_WORD_SEP = r"[\s\-«»\"“”„]+"
+
+
+def _joined(w: str) -> str:
+    """Ключ из нескольких слов → регулярное выражение, где пробел или дефис — любой разделитель из _WORD_SEP."""
+    return _WORD_SEP.join(re.escape(x) for x in re.split(r"[\s\-]+", w))
 
 
 def refers(text: str, words) -> bool:

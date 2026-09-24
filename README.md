@@ -75,9 +75,11 @@
 
 | ОС | файл | установка |
 |---|---|---|
-| macOS 12+ (Apple Silicon, Intel) | `PortfolioCheck-<версия>.dmg` | перетащить в «Программы»; первый запуск — правый клик → «Открыть» |
+| macOS 12+, Apple Silicon (M1 и новее) | `PortfolioCheck-<версия>.dmg` | перетащить в «Программы»; первый запуск — правый клик → «Открыть» |
 | Windows 10/11 x64 | `PortfolioCheck-windows.zip` | распаковать, запустить `PortfolioCheck.exe`; SmartScreen: «Подробнее» → «Выполнить в любом случае» |
 | Linux x86_64 (glibc 2.35+: Ubuntu 22.04+, Debian 12+, Fedora 36+) | `PortfolioCheck-linux-x86_64.tar.gz` | распаковать, `./PortfolioCheck/PortfolioCheck`; ярлык в меню — `./PortfolioCheck/install.sh` |
+
+Сборка для macOS — только под Apple Silicon: релиз собирается на ARM-машине GitHub, а PyInstaller упаковывает скомпилированные библиотеки (Python, Qt, grpcio) той архитектуры, на которой шла сборка. На Mac с Intel dmg из релиза не запустится — соберите сами: `./build_mac.sh` (см. «Сборка из исходников») даст сборку под Intel.
 
 На Linux для Qt нужны системные библиотеки (обычно уже стоят в графическом окружении; если программа не
 стартует — `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1`).

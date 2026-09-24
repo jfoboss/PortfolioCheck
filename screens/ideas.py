@@ -106,6 +106,10 @@ class IdeasMixin:
         if not self.tbl_ideas.selectedIndexes():
             return
         m = QMenu(self)
+        r = self.tbl_ideas.currentRow()
+        t = self.tbl_ideas.item(r, 1).text() if r >= 0 and self.tbl_ideas.item(r, 1) else ""
+        if t:
+            m.addAction(f"Карточка {t}", lambda: self.open_card(t))
         m.addAction("Исключить из идей (в чёрный список)…", self.blacklist_selected)
         m.exec(self.tbl_ideas.viewport().mapToGlobal(pos))
 

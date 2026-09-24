@@ -140,6 +140,9 @@ def fill_caches(d: Path, positions) -> None:
         ex = (date.today() + timedelta(days=9 + 11 * n)).isoformat()
         ideas.append(SCR.Idea(t, name, sector, price, cap, dy, round(price * dy / 100, 4), pe, debt, roe, ff, ex,
                               avg5, None, f"demo-{t}", mon))
+    for i in ideas:                                   # свечи кандидатов — для «Мес.» и графика в карточке
+        (cache / f"candles_{i.uid}.json").write_text(json.dumps(_candles(i.ticker, "equity_core", i.price, years=1)),
+                                                     encoding="utf-8")
     (cache / "screener.json").write_text(json.dumps({
         "at": now.isoformat(), "source": "tinvest2", "ideas": [asdict(i) for i in ideas],
         "stats": {"universe": 250, "checked": len(ideas), "with_cap": len(ideas), "errors": 0}}, ensure_ascii=False),

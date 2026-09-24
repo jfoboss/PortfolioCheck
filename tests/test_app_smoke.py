@@ -125,3 +125,26 @@ def test_about_is_a_separate_window(window):
     window.act_about.trigger()
     assert window.about_win.isVisible() and window.about_win.tab.lbl_env.text()
     window.about_win.close()
+
+
+def test_security_card_collects_everything(window, demo_positions):
+    """Карточка бумаги: позиция и правила, выплаты, новости — из того, что окно уже знает, без сети."""
+    import payouts as PO
+    from news import NewsItem
+    from screens.card import card_data
+    window.on_loaded((demo_positions, None, None, [PO.Payout("SBERP", "Сбербанк-п", "2099-01-10", "", "", 30.0, "RUB",
+                                                              1000, 30000.0, "declared")]))
+    window.news_items = [NewsItem("Сбербанк отчитался", "https://x", "s", None, ["SBERP"]),
+                         NewsItem("Погода", "", "s", None, [])]
+    d = card_data(window, "SBERP")
+    assert d["pos"] is not None and d["rules"]["share"] > 0 and d["rules"]["single_max"] == 11
+    assert [x.record_date for x in d["payouts"]] == ["2099-01-10"]
+    assert [n.title for n in d["news"]] == ["Сбербанк отчитался"]
+    window.tabs.setCurrentIndex(1)
+    row = next(r for r in range(window.tbl_pos.rowCount()) if window.tbl_pos.item(r, 1).text() == "SBERP")
+    window.tbl_pos.cellDoubleClicked.emit(row, 0)
+    card = window._cards["SBERP"]
+    assert card.isVisible() and "Сбербанк" in card.lbl_head.text() and card.tbl_pay.rowCount() == 1
+    window.set_privacy(True); card.refresh()
+    assert card.tbl_pay.item(0, 4).text() == "•••" or "•" in card.tbl_pay.item(0, 4).text()
+    card.close()

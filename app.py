@@ -55,13 +55,14 @@ from screens.ideas import IdeasMixin
 from screens.privacy import PrivacyMixin
 from screens.overview import RenderMixin
 from screens.payouts import PayoutsMixin
+from screens.card import CardMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -421,6 +422,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
             panel.spinner = BusySpinner(panel)
 
         self._build_screen_actions()
+        self._connect_cards()
 
         central = QWidget(); cl_ = QVBoxLayout(central); cl_.setContentsMargins(0, 0, 0, 0); cl_.setSpacing(0)
         cl_.addWidget(self.banner); cl_.addWidget(self.tabs, 1)

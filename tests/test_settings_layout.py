@@ -11,8 +11,12 @@ def test_settings_fit_laptop_screen(window, qapp):
         window.open_settings(); d = window.settings_win
         assert d.tabs.tabBar().isHidden() and d.nav.count() == d.tabs.count() == 12
         assert d.minimumSizeHint().width() < 600
+        from PySide6.QtWidgets import QWidget
         wide = {d.tabs.tabText(i): d.tabs.widget(i).widget().minimumSizeHint().width() for i in range(d.tabs.count())}
-        assert max(wide.values()) <= 700, wide
+        culprits = sorted(((c.minimumSizeHint().width(), type(c).__name__, (getattr(c, "text", None) or (lambda: ""))()[:40])
+                           for i in range(d.tabs.count()) for c in d.tabs.widget(i).widget().findChildren(QWidget)
+                           if type(c).__name__ != "QWidget"), reverse=True)[:6]
+        assert max(wide.values()) <= 700, (wide, culprits)
         d.nav.setCurrentRow(9); assert d.tabs.tabText(d.tabs.currentIndex()) == "Оповещения"
         d.tabs.setCurrentIndex(11); assert d.nav.currentRow() == 11                # палитра и «Доступ» открывают раздел
         d.close()

@@ -161,6 +161,21 @@ def server_chain(host: str, port: int = 443, timeout: int = 20) -> list[tuple[st
 # Окно настроек
 # ---------------------------------------------------------------------------
 
+def _compact(page: QWidget) -> None:
+    """Страница настроек не шире ~700 px на любой ОС: в формах длинная подпись переносится над полем; числовые поля
+    и списки не требуют ширины под самое длинное значение (на Windows поле суммы с большим максимумом просило
+    ~500 px, и страница «Правила» уходила за 1000 px)."""
+    from PySide6.QtWidgets import QAbstractSpinBox
+    for form in page.findChildren(QFormLayout):
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    for sb in page.findChildren(QAbstractSpinBox):
+        sb.setMinimumWidth(min(sb.minimumSizeHint().width(), 160))
+    for cb in page.findChildren(QComboBox):
+        cb.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        cb.setMinimumContentsLength(min(cb.minimumContentsLength() or 18, 24))
+
+
 def _set_check_mark(item, ok: bool, msg: str = "") -> None:
     """✓/✗ с цветом в ячейке таблицы источников (полный текст — в подсказке)."""
     mark, color = SY.ok_mark(ok)
@@ -429,6 +444,8 @@ class SettingsDialog(QDialog):
         # и палитра команд работают как раньше. Страницы — в прокрутке: высокая страница не растягивает окно.
         from PySide6.QtWidgets import QFrame, QListWidget, QScrollArea
         pages = [(self.tabs.widget(i), self.tabs.tabText(i)) for i in range(self.tabs.count())]
+        for page, _ in pages:
+            _compact(page)
         self.tabs.clear()
         for page, name in pages:
             sa = QScrollArea(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.NoFrame); sa.setWidget(page)

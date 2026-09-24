@@ -10,6 +10,7 @@ history.py — свечи из T-Invest API с кэшем, доходности 
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 import jsoncache as JC
@@ -26,28 +27,60 @@ def _cache_file(cache_dir: Path, figi: str) -> Path:
     return cache_dir / f"candles_{figi}.json"
 
 
-def load_cached(cache_dir: Path, figi: str) -> list[tuple[str, float]]:
-    """Ряд «дата → цена закрытия» из cache/candles_<ключ>.json (свечи бумаг и факторы сценариев)."""
+def load_cached(cache_dir: Path, figi: str, days: int | None = 400) -> list[tuple[str, float]]:
+    """Ряд «дата → цена закрытия» из cache/candles_<ключ>.json (свечи бумаг и факторы сценариев).
+    По умолчанию — последние ~400 дней: риск, история стоимости и карточка считают «за год», а в кэше может лежать
+    до KEEP_DAYS (база переоценки 3/5 лет). Вся глубина — days=None."""
     try:
-        return [(d, float(c)) for d, c in JC.read(cache_dir / f"candles_{figi}.json", [])]
+        rows = [(d, float(c)) for d, c in JC.read(cache_dir / f"candles_{figi}.json", [])]
     except (TypeError, ValueError):
         return []
+    if days is None:
+        return rows
+    lo = (date.today() - timedelta(days=days + 10)).strftime("%Y-%m-%d")
+    return [(d, c) for d, c in rows if d >= lo]
 
 
 def save_series(cache_dir: Path, key: str, series) -> None:
     JC.write(cache_dir / f"candles_{key}.json", [list(x) for x in series])
 
 
+KEEP_DAYS = 6 * 365 + 30        # сколько истории держим в кэше: хватает на базу переоценки «5 лет» с запасом
+DEPTH_FILE = "candles_depth.json"   # {ключ: самая ранняя дата, с которой уже спрашивали свечи}
+_DEPTH_LOCK = threading.Lock()      # свечи грузят несколько воркеров сразу — чтение-запись файла глубины под замком
+
+
+def _depth(cache_dir: Path) -> dict:
+    d = JC.read(cache_dir / DEPTH_FILE, {})
+    return d if isinstance(d, dict) else {}
+
+
+def needs_history(cache_dir: Path, figi: str, days: int, cached=None) -> bool:
+    """Нужен ли запрос истории глубже кэша. Нет — если кэш начинается не позже нужной даты (с недельным запасом
+    на выходные) или с этой глубины уже спрашивали: бумага моложе, раньше данных нет, и спрашивать снова незачем."""
+    cached = load_cached(cache_dir, figi, None) if cached is None else cached
+    want = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    if cached and cached[0][0] <= (datetime.strptime(want, "%Y-%m-%d") + timedelta(days=7)).strftime("%Y-%m-%d"):
+        return False
+    asked = _depth(cache_dir).get(figi)
+    return not (asked and asked <= want)
+
+
 def fetch_candles(client, figi: str, cache_dir: Path, days: int = 400, by_uid: bool = False) -> list[tuple[str, float]]:
-    """Дневные закрытия [(YYYY-MM-DD, close)], из кэша + догрузка хвоста. Ошибки API → то, что есть в кэше."""
+    """Дневные закрытия [(YYYY-MM-DD, close)] за `days` дней: из кэша + догрузка. Если кэш короче запрошенного
+    (и так глубоко ещё не спрашивали) — грузится весь период, иначе только хвост. Кэш не обрезается короче
+    KEEP_DAYS: иначе обычное обновление (400 дней) стирало историю за 5 лет, и её грузили заново каждый раз.
+    Ошибки API → то, что есть в кэше."""
     from tinkoff.invest.schemas import CandleInterval
     from tinkoff.invest.utils import quotation_to_decimal
-    cached = load_cached(cache_dir, figi)
+    cached = load_cached(cache_dir, figi, None)
     now = datetime.now(timezone.utc)
-    start = now - timedelta(days=days)
-    if cached:
+    want = now - timedelta(days=days)
+    deep = needs_history(cache_dir, figi, days, cached)
+    start = want
+    if cached and not deep:
         last = datetime.strptime(cached[-1][0], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        start = max(start, last - timedelta(days=3))     # перекрытие, чтобы обновить незакрытую свечу
+        start = max(want, last - timedelta(days=3))      # перекрытие, чтобы обновить незакрытую свечу
     out = {d: c for d, c in cached}
     try:
         # API отдаёт не больше года дневных свечей за запрос — режем по годам
@@ -59,14 +92,21 @@ def fetch_candles(client, figi: str, cache_dir: Path, days: int = 400, by_uid: b
             for c in resp.candles:
                 out[c.time.strftime("%Y-%m-%d")] = float(quotation_to_decimal(c.close))
             cur = chunk_to
+        if deep:                                        # весь период получен: глубже этой даты данных нет
+            with _DEPTH_LOCK:
+                depth = _depth(cache_dir)
+                depth[figi] = min(depth.get(figi) or "9999", want.strftime("%Y-%m-%d"))
+                JC.write(cache_dir / DEPTH_FILE, depth)
     except Exception:  # noqa: BLE001
         pass
     series = sorted(out.items())
-    cutoff = (now - timedelta(days=days + 10)).strftime("%Y-%m-%d")
+    cutoff = (now - timedelta(days=max(days, KEEP_DAYS) + 10)).strftime("%Y-%m-%d")
     series = [(d, c) for d, c in series if d >= cutoff]
     if series:
         save_series(cache_dir, figi, series)
-    return series
+    # вызывающему — запрошенный период, как и раньше (тепловая карта, риск и т.п. считают по своему окну)
+    lo = (want - timedelta(days=10)).strftime("%Y-%m-%d")
+    return [(d, c) for d, c in series if d >= lo]
 
 
 # ---------------------------------------------------------------------------

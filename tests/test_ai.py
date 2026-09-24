@@ -153,3 +153,19 @@ def test_check_model_one_request_and_remembered(catalog, monkeypatch):
     assert again["verdict"] == "good" and len(calls) == 1
     assert "подходит" in ai.describe_check(again)
     assert ai.last_check("openrouter", "other/model", catalog) is None
+
+
+def test_upstream_error_names_requested_model_and_fallbacks():
+    """Регресс: «провайдер модели Decart перегружен» при выбранной z-ai/glm-…:free — казалось, что настройка модели
+    не применилась. Теперь в тексте модель из запроса и запасные, которые тоже пробовали."""
+    body = {"error": {"message": "temporarily rate-limited upstream", "metadata": {"provider_name": "Decart"}}}
+    rl = ai._describe_429(_429(body), {"model": "z-ai/glm-5.2:free", "models": ["z-ai/glm-5.2:free", "qwen/q:free"]})
+    assert rl.kind == "upstream" and "z-ai/glm-5.2:free" in str(rl) and "qwen/q:free" in str(rl)
+
+
+def test_default_model_never_router(monkeypatch):
+    """Регресс: моделью по умолчанию становился маршрутизатор openrouter/free (случайная модель на каждый запрос)."""
+    cat = [{"id": "openrouter/free", "free": True, "recommended": False},
+           {"id": "some/model:free", "free": True, "recommended": False}]
+    monkeypatch.setattr(ai, "_cached_catalog", lambda: cat)
+    assert ai.default_model("openrouter") == "some/model:free"

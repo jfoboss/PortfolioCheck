@@ -41,8 +41,12 @@ def _bundle_path() -> Path | None:
         candidates.append(paths.data_dir() / "ca-bundle.pem")
     except Exception:  # noqa: BLE001
         pass
-    candidates += [Path.home() / "Library" / "Application Support" / "PortfolioCheck" / "ca-bundle.pem",
-                   Path(__file__).with_name("ca-bundle.pem")]
+    try:
+        import paths
+        candidates.append(paths.LOCAL_DIR / "ca-bundle.pem")
+    except Exception:  # noqa: BLE001
+        pass
+    candidates.append(Path(__file__).with_name("ca-bundle.pem"))
     for p in candidates:
         if p.exists():
             return p
@@ -697,7 +701,7 @@ def main() -> None:
         import paths
         default_cfg = paths.data_dir() / "config.yaml"
     except Exception:  # noqa: BLE001
-        default_cfg = Path.home() / "Library" / "Application Support" / "PortfolioCheck" / "config.yaml"
+        default_cfg = Path("config.yaml")
     ap.add_argument("--config", default=str(default_cfg if default_cfg.exists() else "config.yaml"))
     ap.add_argument("--json", help="сохранить сырой снапшот позиций в JSON (для истории/диффа)")
     args = ap.parse_args()

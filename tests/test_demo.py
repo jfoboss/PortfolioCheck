@@ -39,9 +39,11 @@ print("ok")
 
 
 def test_demo_runs_isolated(tmp_path):
-    env = {**os.environ, "HOME": str(tmp_path), "QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)}
+    env = {**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "APPDATA": str(tmp_path / "AppData"),
+           "XDG_DATA_HOME": str(tmp_path / "xdg"), "QT_QPA_PLATFORM": "offscreen", "PYTHONPATH": str(ROOT)}
     shot = os.environ.get("DEMO_SCREENSHOT", "")
     r = subprocess.run([sys.executable, "-c", SCRIPT] + ([shot] if shot else []), cwd=ROOT, env=env,
                        capture_output=True, text=True, timeout=120)
     assert r.returncode == 0 and r.stdout.strip().endswith("ok"), r.stdout + r.stderr
-    assert not (tmp_path / "Library").exists(), "демо тронуло настоящий профиль: " + str(list(tmp_path.rglob("*"))[:10])
+    touched = [p for p in tmp_path.rglob("*") if "PortfolioCheck" in p.name]
+    assert not touched, f"демо тронуло настоящий профиль: {touched[:5]}"

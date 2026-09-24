@@ -23,10 +23,11 @@ app.py  ── каркас главного окна: сборка UI, меню
   screener.py         ── дивидендный скринер по фундаменталу T-Invest
   ai.py               ── провайдеры LLM, сводки, кэш ответов, каталог OpenRouter, разбор 429
   macro.py            ── инфляция и ставка с сайта ЦБ РФ
-  paths.py            ── где лежат данные (локально / iCloud Drive), миграция
+  paths.py            ── где лежат данные (локально / iCloud Drive), миграция; папка по ОС (macOS / Windows / Linux)
+  osutil.py           ── различия ОС: платформа, подписи сочетаний клавиш, моноширинный шрифт, имя хранилища секретов
   config_migrate.py   ── config_version и явные миграции формата конфига
   demo.py             ── режим --demo: временная папка данных, демо-снапшот, секреты только в памяти
-  secrets_store.py    ── Keychain через /usr/bin/security
+  secrets_store.py    ── Keychain через /usr/bin/security (macOS), Credential Manager через keyring (Windows)
 ```
 
 `forecast.py` содержит и модель (`simulate`, `simulate_monthly`, `plan_status`, `required_contribution`,

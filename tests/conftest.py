@@ -14,8 +14,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
     """Каждый тест — с чистым HOME: конфиг, кэш и снапшоты не пересекаются с реальными."""
-    monkeypatch.setenv("HOME", str(tmp_path))
+    # профиль пользователя подменяется на всех ОС: HOME (macOS/Linux), USERPROFILE и APPDATA (Windows)
+    for var in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(var, str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local" / "share"))
     import paths
+    local = paths._local_dir()                  # модуль мог импортироваться в прошлом тесте — пересчитываем
+    monkeypatch.setattr(paths, "LOCAL_DIR", local)
+    monkeypatch.setattr(paths, "POINTER", local / "storage.json")
     monkeypatch.setattr(paths, "data_dir", lambda: tmp_path / "data", raising=False)
     (tmp_path / "data" / "cache").mkdir(parents=True, exist_ok=True)
     yield tmp_path

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QFont
+from osutil import SECRET_STORE, mono_font
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QDialog
 
 APP_VERSION = "1.1"
@@ -66,7 +67,7 @@ def environment_info(data_dir: Path, config_path: str, bundle: Path, has_token: 
         f"Хранилище: {storage_mode} — {data_dir}",
         f"Конфиг: {config_path} ({'есть' if Path(config_path).exists() else 'НЕТ'})",
         f"CA-бандл: {bundle} ({'есть' if bundle.exists() else 'НЕТ'})",
-        f"Токен в Keychain: {'есть' if has_token else 'НЕТ'}",
+        f"Токен в {SECRET_STORE}: {'есть' if has_token else 'НЕТ'}",
         f"Время: {datetime.now():%Y-%m-%d %H:%M:%S}",
     ]
     return "\n".join(lines)
@@ -104,7 +105,7 @@ class ConnectivityWorker(QThread):
                 self.line.emit(f"✗ {name}: {msg}")
                 log.error("check %s: %s", name, msg)
 
-        check("Токен в Keychain", lambda: (_ for _ in ()).throw(RuntimeError("не задан")) if not self.token else "задан")
+        check(f"Токен в {SECRET_STORE}", lambda: (_ for _ in ()).throw(RuntimeError("не задан")) if not self.token else "задан")
         check("CA-бандл", lambda: f"{self.bundle.read_text(errors='replace').count('BEGIN CERTIFICATE')} серт." if self.bundle.exists()
               else (_ for _ in ()).throw(RuntimeError("не собран")))
 
@@ -156,7 +157,7 @@ class AboutTab(QWidget):
         lay = QVBoxLayout(self); lay.setContentsMargins(12, 12, 12, 12)
 
         self.lbl_env = QLabel(); self.lbl_env.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.lbl_env.setFont(QFont("Menlo", 11))
+        self.lbl_env.setFont(mono_font(11))
         lay.addWidget(QLabel("<b>PortfolioCheck</b> — личный инструмент проверки портфеля против своих правил. "
                              "Не является инвестиционной рекомендацией."))
         lay.addWidget(self.lbl_env)
@@ -168,7 +169,7 @@ class AboutTab(QWidget):
         row.addStretch(); lay.addLayout(row)
 
         lay.addWidget(QLabel("Диагностический лог (последние 200 строк; ошибки помечены ERROR):"))
-        self.txt = QPlainTextEdit(); self.txt.setReadOnly(True); self.txt.setFont(QFont("Menlo", 11))
+        self.txt = QPlainTextEdit(); self.txt.setReadOnly(True); self.txt.setFont(mono_font(11))
         self.txt.setLineWrapMode(QPlainTextEdit.NoWrap)
         lay.addWidget(self.txt, 1)
         self.refresh()

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QApplication,
 )
 
+from osutil import SECRET_STORE, SECRET_STORE_NAME, MACHINE, native_keys
 from portfolio_check import CLASS_LABELS, guess_reference, DEFAULT_REFERENCES
 import secrets_store as SEC
 
@@ -41,7 +42,7 @@ TOKEN_HOWTO = (
     "(или в приложении: Настройки → Токены API).<br>"
     "2. «Выпустить токен» → доступ <b>«Только для чтения»</b> → ко всем счетам или к нужному.<br>"
     "3. Скопируй токен сразу — он показывается один раз. Начинается с <code>t.</code><br>"
-    "4. Вставь его сюда. Хранится только в Keychain этого Mac, в файлах не появляется.<br>"
+    f"4. Вставь его сюда. Хранится только в {SECRET_STORE} этого {MACHINE}, в файлах не появляется.<br>"
     "<span style='color:gray'>Документация: <a href='https://developer.tbank.ru/invest/intro/intro/token'>developer.tbank.ru/invest/intro/intro/token</a></span>"
 )
 
@@ -128,25 +129,40 @@ def build_ca_bundle(out_path: Path) -> str:
     roots = Path(grpc.__file__).parent / "_cython" / "_credentials" / "roots.pem"
     if not roots.exists():
         raise RuntimeError(f"Не найден roots.pem у grpcio: {roots}")
-    try:
-        out = subprocess.run(
-            ["openssl", "s_client", "-connect", f"{INVEST_HOST}:443", "-servername", INVEST_HOST, "-showcerts"],
-            input=b"", capture_output=True, timeout=20,
-        ).stdout.decode("utf-8", "replace")
-    except FileNotFoundError as e:
-        raise RuntimeError("Не найден openssl в PATH") from e
-    certs = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", out, re.S)
-    if not certs:
+    chain = server_chain(INVEST_HOST)
+    if not chain:
         raise RuntimeError("Не удалось получить цепочку сертификатов от API (нет сети?)")
-    extra = certs[1:] if len(certs) > 1 else certs
-    text = roots.read_text(encoding="utf-8").rstrip("\n") + "\n" + "\n".join(extra) + "\n"
+    extra = chain[1:] if len(chain) > 1 else chain          # без листового сертификата сервера
+    text = roots.read_text(encoding="utf-8").rstrip("\n") + "\n" + "\n".join(pem for pem, _ in extra) + "\n"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text, encoding="utf-8")
-    subjects = []
-    for c in extra:
-        r = subprocess.run(["openssl", "x509", "-noout", "-subject"], input=c.encode(), capture_output=True)
-        subjects.append(r.stdout.decode().strip().replace("subject=", ""))
-    return "Добавлено из цепочки API:\n" + "\n".join(f"  • {s}" for s in subjects)
+    return "Добавлено из цепочки API:\n" + "\n".join(f"  • {subj}" for _, subj in extra)
+
+
+def server_chain(host: str, port: int = 443, timeout: int = 20) -> list[tuple[str, str]]:
+    """Цепочка сертификатов сервера [(PEM, subject)] средствами Python — без консольного openssl (его нет в Windows).
+    Проверку не делаем намеренно: цель — забрать промежуточные и корень (Минцифры), которых нет в roots.pem."""
+    import socket
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        with ctx.wrap_socket(sock, server_hostname=host) as tls:
+            if hasattr(tls, "get_unverified_chain"):              # Python 3.13+: список DER
+                raw = tls.get_unverified_chain()
+            else:                                                 # 3.10–3.12: тот же метод у внутреннего объекта
+                raw = tls._sslobj.get_unverified_chain()
+    out = []
+    for c in raw or []:
+        if isinstance(c, (bytes, bytearray)):
+            pem, subj = ssl.DER_cert_to_PEM_cert(bytes(c)), ""
+        else:
+            pem = c.public_bytes(ssl._ssl.ENCODING_PEM)
+            info = c.get_info()
+            subj = ", ".join(f"{k}={v}" for rdn in info.get("subject", ()) for k, v in rdn)
+        out.append((pem.strip(), subj or "сертификат"))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -443,7 +459,8 @@ class SettingsDialog(QDialog):
         form.addRow("Обновлять в фоне:", self.cmb_interval)
         form.addRow(self.cb_notify)
         form.addRow(self.cb_privacy)
-        form.addRow(_note("Переключить в любой момент: кнопка «Скрыть/Показать суммы» на панели или ⌘⇧H.", gray=True))
+        form.addRow(_note("Переключить в любой момент: кнопка «Скрыть/Показать суммы» на панели или "
+                            f"{native_keys('Ctrl+Shift+H')}.", gray=True))
         form.addRow(_note("Обновление — это один запрос портфеля к API; квота T-Invest на чтение большая, "
                           "но чаще раза в 15 минут смысла нет: цены ЗПИФ меняются редко, а частые взгляды на портфель "
                           "провоцируют лишние решения.", gray=True))
@@ -482,7 +499,7 @@ class SettingsDialog(QDialog):
         grp.buttonClicked.connect(self._storage_clicked)
         form.addRow(self.lbl_storage)
         form.addRow(_note("При переключении файлы копируются в новую папку. Токен API в общую папку не попадает — "
-                          "он в Keychain каждого Mac, вводится один раз на машину.", gray=True))
+                          f"он в {SECRET_STORE} каждого {MACHINE}, вводится один раз на машину.", gray=True))
         return w
 
     def _export_strategy(self) -> None:
@@ -919,7 +936,8 @@ class SettingsDialog(QDialog):
         form.addRow(self.cb_ai_auto)
         form.addRow("Не пересчитывать чаще, чем раз в:", self.sp_ai_interval)
         form.addRow(_note("Ответы кэшируются: при тех же новостях/данных запрос не уходит вообще, а при изменившихся — не чаще "
-                          "заданного интервала. Кнопка «ИИ-сводка» и ⌘⇧I пересчитывают принудительно.", gray=True))
+                          "заданного интервала. Кнопка «ИИ-сводка» и "
+                          f"{native_keys('Ctrl+Shift+I')} пересчитывают принудительно.", gray=True))
         lay.addLayout(form)
         row = QHBoxLayout()
         self.lbl_ai_key = QLabel()
@@ -1080,7 +1098,7 @@ class SettingsDialog(QDialog):
 
     def _refresh_token_label(self) -> None:
         where = SEC.where(KEYRING_SERVICE, KEYRING_USER)
-        self.lbl_token.setText({"session": "Только до выхода (демо-режим) ✓", "keychain": "Сохранён в Keychain ✓", "file": "Сохранён в защищённом файле (Keychain недоступен) ✓"}.get(where, "Не задан"))
+        self.lbl_token.setText({"session": "Только до выхода (демо-режим) ✓", "keychain": f"Сохранён в {SECRET_STORE} ✓", "file": f"Сохранён в защищённом файле ({SECRET_STORE_NAME} недоступен) ✓"}.get(where, "Не задан"))
 
     def _set_token(self) -> None:
         tok, ok = QInputDialog.getText(self, "Токен T-Invest API", "Read-only токен (начинается с «t.»):", QLineEdit.Password)
@@ -1088,7 +1106,7 @@ class SettingsDialog(QDialog):
             where = SEC.set(KEYRING_SERVICE, KEYRING_USER, tok.strip())
             if where == "file":
                 QMessageBox.information(self, "Токен сохранён в файле",
-                                        "Keychain не принял запись (подробности: Справка → Диагностика и лог). Токен сохранён в локальной "
+                                        f"{SECRET_STORE_NAME} не принял запись (подробности: Справка → Диагностика и лог). Токен сохранён в локальной "
                                         "папке с правами только для твоего пользователя — приложение работает.")
             self._refresh_token_label()
             self.accessChanged.emit()

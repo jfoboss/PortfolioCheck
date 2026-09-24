@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from diagnostics import log
 from ui_common import APP_NAME, MASK, get_token
+from osutil import SECRET_STORE_NAME, mono_font
 from widgets import BadgeDelegate
 
 
@@ -57,7 +58,7 @@ class PrivacyMixin:
             return
         missing = []
         if not has_token:
-            missing.append("токен T-Invest API (Keychain)")
+            missing.append(f"токен T-Invest API ({SECRET_STORE_NAME})")
         if not has_bundle:
             missing.append(f"бандл сертификатов ({self.bundle_path()})")
         self.show_banner("<b>Автообновление не запущено — не хватает: " + " и ".join(missing) + ".</b><br>"
@@ -107,7 +108,7 @@ class PrivacyMixin:
     def _text() -> QTextEdit:
         t = QTextEdit()
         t.setReadOnly(True)
-        t.setFont(QFont("Menlo", 12))
+        t.setFont(mono_font(12))
         return t
 
     def _build_tray(self) -> None:

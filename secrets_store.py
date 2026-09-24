@@ -5,7 +5,8 @@ secrets_store.py — единая точка доступа к секретам 
 keyring (старый SecKeychain API, который отказывает при любой смене подписи бандла: «make sure executable is
 signed»), утилита работает из любого приложения; Keychain один раз спрашивает разрешение для самой утилиты —
 «Всегда разрешать» — и это переживает пересборки. Читается один раз за сессию (кэш в памяти).
-Если security недоступна (не macOS) или отказала — запасной файл 0600 в локальной папке.
+На Windows — Credential Manager через keyring. Если хранилище недоступно или отказало — запасной файл 0600
+в локальной папке.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import paths
@@ -32,7 +34,26 @@ def _sec(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
     return subprocess.run([SECURITY, *args], capture_output=True, text=True, timeout=timeout)
 
 
+IS_WIN = sys.platform.startswith("win")
+
+
+def _wincred():
+    """Windows: Credential Manager через keyring (на Windows он надёжен; на macOS keyring отвергнут — см. DECISIONS)."""
+    try:
+        import keyring
+        return keyring
+    except Exception as e:  # noqa: BLE001
+        log.warning("keyring недоступен: %s — секреты в файле", e)
+        return None
+
+
 def _kc_get(service: str, user: str) -> str | None:
+    if IS_WIN:
+        kr = _wincred()
+        try:
+            return kr.get_password(service, user) if kr else None
+        except Exception as e:  # noqa: BLE001
+            log.error("Credential Manager, чтение: %s", e); return None
     if not os.path.exists(SECURITY):
         return None
     try:
@@ -47,6 +68,14 @@ def _kc_get(service: str, user: str) -> str | None:
 
 
 def _kc_set(service: str, user: str, value: str) -> bool:
+    if IS_WIN:
+        kr = _wincred()
+        try:
+            if kr:
+                kr.set_password(service, user, value); return True
+        except Exception as e:  # noqa: BLE001
+            log.error("Credential Manager, запись: %s", e)
+        return False
     if not os.path.exists(SECURITY):
         return False
     r = _sec("add-generic-password", "-s", service, "-a", user, "-w", value, "-U", "-l", f"PortfolioCheck {service}",
@@ -57,6 +86,14 @@ def _kc_set(service: str, user: str, value: str) -> bool:
 
 
 def _kc_delete(service: str, user: str) -> None:
+    if IS_WIN:
+        kr = _wincred()
+        try:
+            if kr:
+                kr.delete_password(service, user)
+        except Exception:  # noqa: BLE001
+            pass                                   # записи не было — это нормально
+        return
     if os.path.exists(SECURITY):
         _sec("delete-generic-password", "-s", service, "-a", user)
 

@@ -1,6 +1,6 @@
 # PortfolioCheck — инструкции для агента
 
-Настольное приложение для macOS (Python 3.12 + PySide6) — сверяет портфель в Т-Инвестициях (T-Invest API, gRPC)
+Настольное приложение для macOS и Windows (Python 3.12 + PySide6) — сверяет портфель в Т-Инвестициях (T-Invest API, gRPC)
 с правилами пользователя. Интерфейс, документация, комментарии и коммиты — **на русском**.
 
 ## Команды
@@ -10,7 +10,10 @@
 - Запуск из исходников: `.venv/bin/python app.py`; на вымышленном портфеле без токена и без записи в настоящий
   профиль — `.venv/bin/python app.py --demo` (для скриншотов и осмотра UI)
 - Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`)
-- Сборка: `./build_mac.sh` → `dist/PortfolioCheck.app` и `.dmg` (только на macOS)
+- Сборка: `./build_mac.sh` → `dist/PortfolioCheck.app` и `.dmg` (только на macOS); Windows — `python build_windows.py`
+  (на Windows) или CI: `.github/workflows/ci.yml` гоняет тесты на ubuntu/windows/macos и собирает zip под Windows
+- Различия ОС — только через `osutil.py` (платформа, подписи сочетаний клавиш, шрифт) и `paths.py` (папки);
+  сочетания задавай как `Ctrl+…` (на macOS это ⌘), в подписях — `native_keys()`, не «⌘» руками
 - Перед каждым коммитом/push: `scripts/check_private.sh` — ищет личные данные в исходниках
 
 ## Жёсткие правила

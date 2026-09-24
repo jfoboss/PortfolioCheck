@@ -15,7 +15,21 @@ import shutil
 from pathlib import Path
 
 APP_NAME = "PortfolioCheck"
-LOCAL_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
+
+
+def _local_dir() -> Path:
+    """Стандартная папка данных приложения для ОС: macOS — Application Support, Windows — %APPDATA%,
+    Linux — $XDG_DATA_HOME (~/.local/share). Путь на macOS не менялся — существующие данные на месте."""
+    import os
+    import sys
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / APP_NAME
+    if sys.platform.startswith("win"):
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / APP_NAME
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / APP_NAME
+
+
+LOCAL_DIR = _local_dir()
 ICLOUD_ROOT = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
 ICLOUD_DIR = ICLOUD_ROOT / APP_NAME
 POINTER = LOCAL_DIR / "storage.json"
@@ -23,7 +37,9 @@ DATA_FILES = ("config.yaml", "ca-bundle.pem")
 
 
 def icloud_available() -> bool:
-    return ICLOUD_ROOT.is_dir()
+    """iCloud Drive — только macOS. На Windows общая папка выбирается как «Другая папка» (OneDrive, iCloud для Windows…)."""
+    import sys
+    return sys.platform == "darwin" and ICLOUD_ROOT.is_dir()
 
 
 DEMO_DIR: Path | None = None   # режим --demo (demo.py): временная папка вместо настоящей, указатель не трогаем
@@ -64,8 +80,11 @@ def data_dir() -> Path:
         d = ICLOUD_DIR if (icloud_available() and _accessible(ICLOUD_DIR)) else LOCAL_DIR
         _write_pointer(d)
     if d != LOCAL_DIR and not _accessible(d):
-        fallback_reason = (f"Нет доступа к папке данных {d} — работаю локально. Разрешение: Системные настройки → "
-                           "Конфиденциальность и безопасность → Файлы и папки → PortfolioCheck → iCloud Drive.")
+        import sys
+        fallback_reason = (f"Нет доступа к папке данных {d} — работаю локально. " + (
+            "Разрешение: Системные настройки → Конфиденциальность и безопасность → Файлы и папки → PortfolioCheck → "
+            "iCloud Drive." if sys.platform == "darwin" else
+            "Проверь, что папка существует и доступна (облачный диск подключён), и выбери её заново в Настройки → Общие."))
         d = LOCAL_DIR
     d.mkdir(parents=True, exist_ok=True)
     (d / "snapshots").mkdir(exist_ok=True)

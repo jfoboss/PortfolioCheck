@@ -5,7 +5,7 @@ app.py — десктопное окно над portfolio_check.py (macOS, PySid
   Вкладки: Сводка (доли vs цели) · Сигналы (правила) · Позиции (таблица) · Отчёт (markdown)
   Все настройки (цели, классификация, правила, токен, сертификаты) — через «Настройки…».
   Конфиг живёт в ~/Library/Application Support/PortfolioCheck/config.yaml и пишется только приложением.
-  Токен хранится в macOS Keychain (keyring), не в файлах.
+  Токен хранится в Keychain (macOS) или диспетчере учётных данных (Windows), не в файлах.
   Загрузка портфеля — в фоновом потоке, окно не блокируется.
   «Файл → Открыть снапшот» — просмотр сохранённого JSON без сети (и для демо).
 
@@ -43,6 +43,7 @@ from diagnostics import log
 import news as NEWS
 import screener as SCR
 import config_migrate as CM
+from osutil import native_keys, IS_MAC
 
 from ui_common import APP_NAME, get_token, ensure_config
 from widgets import BusySpinner
@@ -91,7 +92,11 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.set_privacy(self.privacy)
         self.render_ai(); self.render_exec_cached(); self.update_ai_visibility()
         self.apply_refresh_schedule()
-        if paths.fallback_reason:
+        if paths.fallback_reason and not IS_MAC:
+            log.warning(paths.fallback_reason)
+            self.show_banner("<b>Папка данных недоступна — работаю с локальной копией настроек.</b><br>"
+                             + paths.fallback_reason, retry=False)
+        elif paths.fallback_reason:
             log.warning(paths.fallback_reason)
             self.show_banner(
                 "<b>Нет доступа к iCloud Drive — работаю с локальной копией настроек.</b><br>"
@@ -99,8 +104,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                 "<b>Системные настройки → Конфиденциальность и безопасность → Полный доступ к диску</b> → добавить PortfolioCheck "
                 "(кнопка «+» или перетащить приложение из папки Программы) → включить. Затем «Проверить снова» "
                 "(или перезапустить приложение).",
-                "Открыть настройки доступа", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
-                retry=True)
+                "Открыть настройки доступа" if IS_MAC else "",
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" if IS_MAC else "", retry=True)
         AI.CATALOG_DIR = paths.data_dir() / "cache"   # модель по умолчанию для OpenRouter — из живого каталога
         AI.load_rate_block()                           # дневной лимит, пойманный до перезапуска, ещё действует
         self.restore_layout()                      # размер окна, положение разделителей, активный экран
@@ -135,7 +140,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.act_privacy.setCheckable(True)
         self.act_privacy.setChecked(self.privacy)
         self.act_privacy.setShortcut(QKeySequence("Ctrl+Shift+H"))
-        self.act_privacy.setToolTip("Спрятать размер портфеля и суммы (⌘⇧H). Проценты и названия остаются.")
+        self.act_privacy.setToolTip(f"Спрятать размер портфеля и суммы ({native_keys('Ctrl+Shift+H')}). "
+                                    "Проценты и названия остаются.")
         self.act_privacy.toggled.connect(self.set_privacy)
 
         act_open = QAction("Открыть снапшот…", self); act_open.setShortcut(QKeySequence.Open)
@@ -363,7 +369,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         news_w = QWidget(); nl = QVBoxLayout(news_w); nl.setContentsMargins(0, 0, 0, 0)
         nrow = QHBoxLayout(); nrow.addWidget(QLabel("<b>Новости</b>")); nrow.addWidget(self.news_filter, 1); nrow.addWidget(self.btn_news)
         self.ai_panel = self._text(); self.ai_panel.setFont(QFont(self.font().family(), 12))
-        self.btn_ai = QPushButton("ИИ"); self.btn_ai.setToolTip("Пересчитать ИИ-сводки сейчас (⌘⇧I)")
+        self.btn_ai = QPushButton("ИИ"); self.btn_ai.setToolTip(f"Пересчитать ИИ-сводки сейчас ({native_keys('Ctrl+Shift+I')})")
         self.btn_ai.clicked.connect(lambda: (setattr(self, "_exec_force", True), self.run_ai(manual=True)))
         nrow.addWidget(self.btn_ai)
         self.news_split_ai = self.ai_panel   # прячем панель целиком; таблица займёт всё место

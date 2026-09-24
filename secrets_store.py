@@ -5,7 +5,7 @@ secrets_store.py — единая точка доступа к секретам 
 keyring (старый SecKeychain API, который отказывает при любой смене подписи бандла: «make sure executable is
 signed»), утилита работает из любого приложения; Keychain один раз спрашивает разрешение для самой утилиты —
 «Всегда разрешать» — и это переживает пересборки. Читается один раз за сессию (кэш в памяти).
-На Windows — Credential Manager через keyring. Если хранилище недоступно или отказало — запасной файл 0600
+На Windows — Credential Manager, на Linux — Secret Service (GNOME Keyring, KWallet), оба через keyring. Если хранилище недоступно или отказало — запасной файл 0600
 в локальной папке.
 """
 
@@ -35,10 +35,13 @@ def _sec(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
 
 
 IS_WIN = sys.platform.startswith("win")
+# keyring — на Windows (Credential Manager) и Linux (Secret Service: GNOME Keyring, KWallet). На macOS — утилита
+# security: keyring там отвергнут из-за подписи бандла (см. DECISIONS).
+USE_KEYRING = sys.platform != "darwin"
 
 
 def _wincred():
-    """Windows: Credential Manager через keyring (на Windows он надёжен; на macOS keyring отвергнут — см. DECISIONS)."""
+    """Системное хранилище через keyring. Нет пакета или бэкенда (Linux без Secret Service) — None / ошибка → файл."""
     try:
         import keyring
         return keyring
@@ -48,12 +51,12 @@ def _wincred():
 
 
 def _kc_get(service: str, user: str) -> str | None:
-    if IS_WIN:
+    if USE_KEYRING:
         kr = _wincred()
         try:
             return kr.get_password(service, user) if kr else None
         except Exception as e:  # noqa: BLE001
-            log.error("Credential Manager, чтение: %s", e); return None
+            log.warning("хранилище секретов, чтение: %s", e); return None
     if not os.path.exists(SECURITY):
         return None
     try:
@@ -68,13 +71,13 @@ def _kc_get(service: str, user: str) -> str | None:
 
 
 def _kc_set(service: str, user: str, value: str) -> bool:
-    if IS_WIN:
+    if USE_KEYRING:
         kr = _wincred()
         try:
             if kr:
                 kr.set_password(service, user, value); return True
         except Exception as e:  # noqa: BLE001
-            log.error("Credential Manager, запись: %s", e)
+            log.warning("хранилище секретов, запись: %s — сохраняю в файл 0600", e)
         return False
     if not os.path.exists(SECURITY):
         return False
@@ -86,7 +89,7 @@ def _kc_set(service: str, user: str, value: str) -> bool:
 
 
 def _kc_delete(service: str, user: str) -> None:
-    if IS_WIN:
+    if USE_KEYRING:
         kr = _wincred()
         try:
             if kr:

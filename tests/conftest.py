@@ -24,6 +24,11 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "LOCAL_DIR", local)
     monkeypatch.setattr(paths, "POINTER", local / "storage.json")
     monkeypatch.setattr(paths, "data_dir", lambda: tmp_path / "data", raising=False)
+    # настоящие хранилища секретов (Keychain, Credential Manager, Secret Service) тесты не трогают — только файл
+    import secrets_store as SEC
+    monkeypatch.setattr(SEC, "_wincred", lambda: None)
+    monkeypatch.setattr(SEC, "SECURITY", str(tmp_path / "no-security-binary"))
+    monkeypatch.setattr(SEC, "_cache", {})
     (tmp_path / "data" / "cache").mkdir(parents=True, exist_ok=True)
     yield tmp_path
 

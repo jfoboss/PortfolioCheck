@@ -11,8 +11,12 @@ IS_MAC = sys.platform == "darwin"
 IS_WIN = sys.platform.startswith("win")
 
 # где лежат секреты — для подписей в UI
-SECRET_STORE = "диспетчере учётных данных Windows" if IS_WIN else "Keychain"      # «хранится в …»
-SECRET_STORE_NAME = "Диспетчер учётных данных Windows" if IS_WIN else "Keychain"   # «… не принял запись»
+IS_LINUX = sys.platform.startswith("linux")
+# «хранится в …» / «… не принял запись»
+SECRET_STORE = ("диспетчере учётных данных Windows" if IS_WIN else
+                "системном хранилище паролей (Secret Service)" if IS_LINUX else "Keychain")
+SECRET_STORE_NAME = ("Диспетчер учётных данных Windows" if IS_WIN else
+                     "Хранилище паролей (Secret Service)" if IS_LINUX else "Keychain")
 MACHINE = "компьютера" if not IS_MAC else "Mac"
 
 

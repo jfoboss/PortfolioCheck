@@ -11,7 +11,7 @@ import html
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
@@ -57,17 +57,15 @@ FEED_CATALOG = {
         ("https://neftianka.ru/feed/", "Нефтянка"),
         ("https://oilcapital.ru/rss", "Нефть и Капитал"),
         ("https://peretok.ru/rss/", "Переток.ру (электроэнергетика)"),
-        ("https://www.bigpowernews.ru/rss/", "BigpowerNews (электроэнергетика)"),
-        ("https://www.eprussia.ru/rss/", "Энергетика и промышленность"),
+        ("https://www.bigpowernews.ru/rss.php", "BigpowerNews (электроэнергетика)"),
     ],
     "Промышленность и сырьё": [
         ("https://www.metalinfo.ru/ru/news/rss.xml", "Металлоснабжение и сбыт"),
-        ("https://www.agroinvestor.ru/rss/", "Агроинвестор"),
+        ("https://www.agroinvestor.ru/feed/public-agronews.xml", "Агроинвестор"),
     ],
     "Недвижимость и склады": [
-        ("https://cre.ru/rss", "CRE (коммерческая недвижимость)"),
+        ("https://cre.ru/rss/rss_news.xml", "CRE (коммерческая недвижимость)"),
         ("https://arendator.ru/rss/", "Arendator"),
-        ("https://www.rbc.ru/v10/ajax/get-news-feed/project/realty/lastDate/rss", "РБК Недвижимость"),
     ],
     "Потребительский сектор": [
         ("https://www.retail.ru/rss/news/", "Retail.ru"),
@@ -80,7 +78,15 @@ def check_feed(url: str, ca_bundle: Path | None = None) -> tuple[bool, str]:
     try:
         data = net.fetch(url, timeout=10)
         items = parse_feed(data, url)
-        return (True, f"{len(items)} новостей") if items else (False, "нет элементов <item>")
+        if items:
+            return True, f"{len(items)} новостей"
+        head = data[:600].lstrip().lower()
+        if not head:
+            return False, "пустой ответ"
+        if head.startswith((b"<!doctype html", b"<html")):
+            # Forbes, Банки.ру и др. отдают JS-проверку «вы не робот» — с домашнего адреса часто проходит, из облака нет
+            return False, "вместо ленты — веб-страница (защита от ботов или лента переехала)"
+        return False, "нет новостей в ленте"
     except Exception as e:  # noqa: BLE001
         return False, SY.err_text(e, 80)
 
@@ -115,8 +121,14 @@ SOURCE_BADGES = {
 #    упомянута всегда, это не новость про акцию MOEX. Привязка — только к другим бумагам, без «макро».
 SOURCE_RULES = {
     "smart-lab.ru": {"title_only": True, "no_macro": True},
-    "moex.com": {"skip": {"MOEX"}, "no_macro": True},
+    "moex.com": {"skip": {"MOEX"}, "no_macro": True, "title_only": True,
+                 # техника торгов: ценовые коридоры, размещения и выкуп облигаций, допуск к торгам — даже про бумагу
+                 # из портфеля («облигации Сбербанк КИБ», «коридор МТС») это не новость для инвестора
+                 "drop": re.compile(r"ценового коридора|диапазона оценки|размещени|сбора заявок|условий проведения торгов|"
+                                    r"условия проведения торгов|допущенных к торгам|приобретения облигаций|приостановк|"
+                                    r"начале торгов|облигаций серии|баз расчета", re.I)},
 }
+MAX_AGE_DAYS = 7         # старше — не показываем: лента Мосбиржи отдаёт сообщения за пару месяцев
 
 
 def _rule(source: str) -> dict:
@@ -169,6 +181,19 @@ def _parse_date(v: str | None):
             return None
 
 
+def _local(tag) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _text(el, name: str) -> str:
+    """Текст дочернего элемента по имени без пространства имён: у части лент RSS объявлен xmlns по умолчанию
+    (retail.ru — backend.userland.com/rss2), и <item>/<title> приходят как {ns}item — лента выглядела пустой."""
+    for ch in el:
+        if _local(ch.tag) == name:
+            return ch.text or ""
+    return ""
+
+
 def parse_feed(data: bytes, source: str) -> list[NewsItem]:
     """Понимает RSS (<item>) и Atom (<entry>) — часть изданий отдаёт именно Atom."""
     items = []
@@ -176,11 +201,11 @@ def parse_feed(data: bytes, source: str) -> list[NewsItem]:
         root = ET.fromstring(data)
     except ET.ParseError:
         return items
-    for it in root.iter("item"):                       # RSS
-        title = html.unescape(it.findtext("title") or "").strip()      # «&quot;25&quot;» у Мосбиржи
-        link = (it.findtext("link") or "").strip()
-        desc = html.unescape(re.sub(r"<[^>]+>", " ", it.findtext("description") or "")).strip()
-        pub = _parse_date(it.findtext("pubDate")) or _parse_date(it.findtext("{http://purl.org/dc/elements/1.1/}date"))
+    for it in (e for e in root.iter() if _local(e.tag) == "item"):     # RSS, в т.ч. с пространством имён (retail.ru)
+        title = html.unescape(_text(it, "title")).strip()      # «&quot;25&quot;» у Мосбиржи
+        link = _text(it, "link").strip()
+        desc = html.unescape(re.sub(r"<[^>]+>", " ", _text(it, "description"))).strip()
+        pub = _parse_date(_text(it, "pubDate")) or _parse_date(_text(it, "date"))
         if title:
             items.append(NewsItem(title, link, source, pub, [], desc[:300]))
     if items:
@@ -285,13 +310,18 @@ def match(items: list[NewsItem], keywords: dict[str, list[str]]) -> list[NewsIte
     out = []
     for it in items:
         text = item_text(it)
-        if offtopic(text):
+        drop = _rule(it.source).get("drop")
+        if offtopic(text) or (drop is not None and drop.search(it.title)):
             continue
         hits = [t for t, words in keywords.items() if item_refers(it, t, words)]
         if hits or (not _rule(it.source).get("no_macro") and any(k.lower() in text for k in MACRO_KEYWORDS)):
             it.matched = hits
             out.append(it)
     return out
+
+
+def _aware(d: datetime) -> datetime:
+    return d if d.tzinfo else d.astimezone()      # без пояса — считаем местным
 
 
 def fetch_news(feeds: list[str], positions, aliases: dict[str, list[str]], ca_bundle: Path | None = None) -> tuple[list[NewsItem], list[str]]:
@@ -304,6 +334,8 @@ def fetch_news(feeds: list[str], positions, aliases: dict[str, list[str]], ca_bu
         except Exception:  # noqa: BLE001
             failed.append(url)
     kw = build_keywords(positions, {**DEFAULT_ALIASES, **aliases})
+    cutoff = datetime.now(timezone.utc) - timedelta(days=MAX_AGE_DAYS)
+    all_items = [it for it in all_items if it.published is None or _aware(it.published) >= cutoff]
     matched = match(all_items, kw)
     seen, uniq = set(), []
     for it in matched:

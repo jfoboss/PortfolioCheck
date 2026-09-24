@@ -202,8 +202,37 @@ def test_news_source_rules_funds_and_entities():
              it("Об исключении ценных бумаг", "облигации ПАО Сбербанк исключены", "moex.com"),
              it("Режиссер рассказал, почему время сказок в кино уходит", "Сказки позволили отработать технологии съемок")]
     got = {x.title: x.matched for x in N.match(items, kw)}
-    assert got == {"Русагро: разбор отчётности": ["AGRO"], "Об исключении ценных бумаг": ["SBERP"]}
+    assert got == {"Русагро: разбор отчётности": ["AGRO"]}          # у Мосбиржи — только заголовок, самой MOEX нет
     feed = (b"<rss><channel><item><title>O &amp;quot;25&amp;quot; ok</title><description>&amp;laquo;x&amp;raquo;"
             b"</description></item></channel></rss>")
     one = N.parse_feed(feed, "moex.com")[0]
     assert one.title == 'O "25" ok' and one.summary == "«x»"
+
+
+def test_feed_namespace_html_check_age_and_moex_technical(monkeypatch):
+    """Регресс: retail.ru (RSS с xmlns по умолчанию) выглядел пустой лентой; Forbes/Банки.ру отдают страницу
+    «вы не робот» — «Проверить» писал «нет элементов <item>»; лента Мосбиржи — 1000+ техсообщений за два месяца
+    (ценовые коридоры МТС, размещения облигаций «Сбербанк КИБ») привязывались к бумагам портфеля."""
+    from datetime import datetime, timedelta, timezone
+    ns = (b'<rss version="2.0" xmlns="http://backend.userland.com/rss2"><channel><item><title>A</title>'
+          b'<link>u</link><pubDate>Fri, 19 Sep 2026 05:00:00 +0300</pubDate></item></channel></rss>')
+    got = N.parse_feed(ns, "retail.ru")
+    assert [(i.title, i.link) for i in got] == [("A", "u")] and got[0].published is not None
+    monkeypatch.setattr(N.net, "fetch", lambda url, timeout=10: b"<html><head><meta name='robots'></head></html>")
+    ok, msg = N.check_feed("https://www.forbes.ru/newrss.xml")
+    assert not ok and "защита от ботов" in msg
+
+    now = datetime.now(timezone.utc)
+    pos = [NS(ticker="MTSS", name="МТС"), NS(ticker="SBERP", name="Сбербанк")]
+
+    def item(title, days, src="moex.com"):
+        return N.NewsItem(title, "", src, now - timedelta(days=days), [], "")
+    items = [item("12.08, изменены значения верхней границы ценового коридора и диапазона оценки МТС", 0),
+             item("Об отмене размещения облигаций серии CIB-001 АО «Сбербанк КИБ»", 0),
+             item("Сбербанк присоединился к торгам на новом рынке", 0),
+             item("МТС отчиталась о выручке", 30, "interfax.ru"),
+             item("МТС отчиталась о прибыли", 1, "interfax.ru")]
+    monkeypatch.setattr(N, "parse_feed", lambda data, src: [i for i in items if i.source == src])
+    monkeypatch.setattr(N.net, "fetch", lambda url, timeout=12: b"")
+    got, failed = N.fetch_news(["https://www.moex.com/x", "https://interfax.ru/rss"], pos, {})
+    assert [i.title for i in got] == ["Сбербанк присоединился к торгам на новом рынке", "МТС отчиталась о прибыли"]

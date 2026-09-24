@@ -11,7 +11,8 @@
   профиль — `.venv/bin/python app.py --demo` (для скриншотов и осмотра UI)
 - Тесты: `.venv/bin/python -m pytest -q` — offscreen, без сети, с временным HOME (см. `tests/conftest.py`)
 - Сборка: `./build_mac.sh` → `dist/PortfolioCheck.app` и `.dmg` (только на macOS); Windows — `python build_windows.py`
-  (на Windows) или CI: `.github/workflows/ci.yml` гоняет тесты на ubuntu/windows/macos и собирает zip под Windows
+  (на Windows) или CI: `.github/workflows/ci.yml` гоняет тесты на ubuntu/windows/macos и собирает zip под Windows;
+  релиз (GitHub → Releases → Publish с тегом `vX.Y`) — `.github/workflows/release.yml` прикладывает zip и dmg
 - Различия ОС — только через `osutil.py` (платформа, подписи сочетаний клавиш, шрифт) и `paths.py` (папки);
   сочетания задавай как `Ctrl+…` (на macOS это ⌘), в подписях — `native_keys()`, не «⌘» руками
 - Перед каждым коммитом/push: `scripts/check_private.sh` — ищет личные данные в исходниках

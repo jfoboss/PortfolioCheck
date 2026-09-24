@@ -65,10 +65,15 @@ cd portfolio-check
 
 Запуск без сборки, из исходников: `.venv/bin/python app.py`.
 
+### Готовые сборки
+
+Страница **Releases** репозитория: `PortfolioCheck-<версия>.dmg` для macOS и `PortfolioCheck-windows.zip` для Windows.
+Их собирает GitHub Actions при публикации релиза (`.github/workflows/release.yml`). Промежуточные сборки Windows —
+в артефактах CI (Actions → запуск → Artifacts).
+
 ### Windows (первая версия)
 
-Готовая сборка — архив `PortfolioCheck-windows.zip` из артефактов CI (GitHub → Actions → последний запуск на
-ветке → Artifacts). Распакуй и запусти `PortfolioCheck.exe`. Подписи кода пока нет: SmartScreen покажет
+Распакуй `PortfolioCheck-windows.zip` и запусти `PortfolioCheck.exe`. Подписи кода пока нет: SmartScreen покажет
 «Неизвестный издатель» → «Подробнее» → «Выполнить в любом случае». Собрать самому — см. `build_windows.py`.
 
 Отличия от macOS: данные — в `%APPDATA%\PortfolioCheck`, токен и ключи ИИ — в диспетчере учётных данных Windows,

@@ -56,13 +56,14 @@ from screens.privacy import PrivacyMixin
 from screens.overview import RenderMixin
 from screens.payouts import PayoutsMixin
 from screens.card import CardMixin
+from screens.attribution import AttributionMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, CardMixin, AttributionMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -417,8 +418,10 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.forecast.request_long_history = lambda years: self.apply_growth_base(fetch_if_needed=True)
         hist_w = self._doc_panel(QWidget()); hsl2 = QVBoxLayout(hist_w); hsl2.setContentsMargins(8, 8, 8, 8)
         hsl2.addWidget(self.chart_history, 1); hsl2.addWidget(self.lbl_history)
-        strat_bottom = QSplitter(Qt.Horizontal); strat_bottom.addWidget(hist_w); strat_bottom.addWidget(self.txt_report)
-        strat_bottom.setStretchFactor(0, 3); strat_bottom.setStretchFactor(1, 2)
+        strat_bottom = QSplitter(Qt.Horizontal); strat_bottom.setObjectName("strategy_bottom")
+        strat_bottom.addWidget(hist_w); strat_bottom.addWidget(self._build_attribution_panel())
+        strat_bottom.addWidget(self.txt_report)
+        strat_bottom.setStretchFactor(0, 3); strat_bottom.setStretchFactor(1, 3); strat_bottom.setStretchFactor(2, 2)
         strategy = QSplitter(Qt.Vertical); strategy.setObjectName("strategy")
         strategy.addWidget(self.forecast); strategy.addWidget(strat_bottom)
         strategy.setStretchFactor(0, 3); strategy.setStretchFactor(1, 2)
@@ -805,6 +808,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self._auto_note = ""
         self.render()
         self.autosave()
+        self.render_attribution()                  # после сохранения: сегодняшний снапшот — конец периода
         self.pipeline_step("portfolio", "свечи")
         self.start_history()
         if getattr(self, "_last_alerts", 0) and self.tray.isVisible() and self.cfg.get("refresh", {}).get("notify", True):

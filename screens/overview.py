@@ -153,6 +153,7 @@ class RenderMixin:
                                     pc.price_growth_target_weighted(self.positions, self.cfg, getattr(self, "period_changes", {}) or {}))
         self._last_alerts = n_alerts
         self.render_payouts()                      # суммы календаря тоже подчиняются «глазику»
+        self.render_attribution()
 
     @staticmethod
     def _fill(table: QTableWidget, rows: list) -> None:

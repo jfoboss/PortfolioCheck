@@ -183,7 +183,8 @@ def fill_caches(d: Path, positions) -> None:
         for r in rows:
             s = series.get(r.get("figi", ""))
             price = next((c for dd, c in reversed(s) if dd <= day.isoformat()), float(r["cur_price"])) if s else float(r["cur_price"])
-            snap.append({**r, "value_rub": str(round(float(r["quantity"]) * scale * price, 2))})
+            qty = round(float(r["quantity"]) * scale, 4)       # меньше бумаг — атрибуция увидит пополнения
+            snap.append({**r, "quantity": str(qty), "value_rub": str(round(qty * price, 2))})
         f = d / "snapshots" / f"{day:%Y-%m-%d}.json"
         if f.exists():                               # 1-е число сегодня — текущий снапшот не перезаписываем
             continue

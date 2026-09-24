@@ -166,6 +166,12 @@ def _cached_catalog() -> list[dict]:
         return []
 
 
+def _is_router(model_id: str) -> bool:
+    """Служебные «модели» OpenRouter (openrouter/free, openrouter/auto) — это маршрутизаторы на случайную модель:
+    ответ приходит от неизвестно кого, ошибки — от чужих провайдеров. Моделью по умолчанию их не берём."""
+    return model_id.startswith("openrouter/")
+
+
 def default_model(provider: str) -> str:
     """Модель по умолчанию. Для OpenRouter — первая рекомендуемая бесплатная из каталога: бесплатные версии
     снимают без предупреждения, и зашитый в код id со временем перестаёт существовать."""
@@ -175,7 +181,7 @@ def default_model(provider: str) -> str:
         if rec:
             return rec[0]
         if cat and PROVIDERS["openrouter"]["model"] not in {m["id"] for m in cat}:
-            free = [m["id"] for m in cat if m["free"]]
+            free = [m["id"] for m in cat if m["free"] and not _is_router(m["id"])]
             if free:
                 return free[0]
     return PROVIDERS[provider]["model"]
@@ -395,8 +401,11 @@ def _describe_429(e, body: dict) -> RateLimited:
         return RateLimited("лимит 20 запросов в минуту для бесплатных моделей — подожди минуту.", "minute", reset)
     prov = meta.get("provider_name") or meta.get("provider_code") or ""
     if prov or "upstream" in low or "temporarily" in low:
-        return RateLimited(f"провайдер модели{(' ' + str(prov)) if prov else ''} перегружен (это не твой лимит) — "
-                           "повтори позже или выбери другую модель ★.", "upstream", reset)
+        # называем модель из запроса: провайдер в ответе может быть чужим (сработала запасная из body["models"])
+        fb = [m for m in body.get("models") or [] if m != model]
+        return RateLimited(f"модель {model}: провайдер{(' ' + str(prov)) if prov else ''} перегружен (это не твой лимит)"
+                           + (f", запасные ({', '.join(fb)}) тоже не ответили" if fb else "")
+                           + " — повтори позже или выбери другую модель ★.", "upstream", reset)
     return RateLimited(f"слишком много запросов{': ' + msg[:150] if msg else ''}"
                        + (" — для бесплатной модели это обычно дневной лимит аккаунта" if model.endswith(":free") else ""),
                        "other", reset)

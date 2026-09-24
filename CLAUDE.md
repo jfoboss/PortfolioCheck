@@ -60,6 +60,9 @@
 - **Модальные окна в тестах** (`SetupWizard.exec`) подменяй, иначе тест зависнет.
 - **MOEX ISS убрал `/securities/{t}/dividends`** — фундаментал и дивиденды берём из T-Invest
   (`GetAssetFundamentals`, `GetDividends`).
+- **Сигнатуры SDK T-Invest — по `tinkoff/invest/services.py`, не по описанию API**: новые методы (`get_forecast_by`,
+  `get_asset_fundamentals`) принимают объект запроса, старые — именованные аргументы. SDK в тестах нет — подменный
+  метод пиши с той же сигнатурой, что в SDK, иначе `TypeError` увидит только пользователь.
 - **Сайты (RSS, ISS, ЦБ, ИИ) — только через `net.system_context()`** (корни ОС через truststore), не
   `ssl.create_default_context()`: в собранной программе пути OpenSSL — от машины сборки, dmg из CI не видел ни
   одного сайта. T-Invest — свой бандл с корнем Минцифры; из того же бандла `net` доверяет Минцифры и для сайтов

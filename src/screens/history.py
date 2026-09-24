@@ -13,7 +13,7 @@ import paths
 import history as H
 from diagnostics import log
 from ui_common import get_token
-from workers import HistoryWorker, LongHistoryWorker
+from workers import HistoryWorker, LongHistoryWorker, LONG_TYPES
 import style as SY
 from widgets import is_running
 
@@ -104,7 +104,7 @@ class HistoryMixin:
         for p in self.positions:
             if not p.figi:
                 continue
-            series = H.load_cached(cache_dir, p.figi)
+            series = H.load_cached(cache_dir, p.figi, None)
             v, cov = H.cagr(series, float(p.cur_price), years) if series else (None, 0.0)
             if v is None:
                 missing += 1
@@ -122,8 +122,15 @@ class HistoryMixin:
             self._long_values = {"years": years, "values": vals, "covered": covered, "missing": missing}
             self._push_growth_to_forecast()
             log.info("переоценка из кэша: база %s г, бумаг %d, глубина %.1f г", years, len(vals), covered)
-        if fetch_if_needed and (not vals or covered < years * 0.8):
-            self.start_long_history(float(years))     # кэша нет или он короче базы — догружаем в фоне
+        # догружаем, только если хоть одной бумаге не хватает истории И так глубоко по ней ещё не спрашивали.
+        # По средней глубине решать нельзя: у молодых бумаг (ЗПИФ, недавние размещения) 5 лет нет в природе,
+        # средняя навсегда меньше базы — и история «грузилась» при каждом обновлении.
+        days, cache_dir = int(years * 365) + 30, paths.cache_dir()
+        short = [p.ticker for p in self.positions if p.figi and p.instrument_type in LONG_TYPES
+                 and H.needs_history(cache_dir, p.figi, days)]
+        if fetch_if_needed and short:
+            log.info("история %s г: не хватает по %d бумагам (%s…) — догружаю", years, len(short), ", ".join(short[:5]))
+            self.start_long_history(float(years))
 
     def start_long_history(self, years: float) -> None:
         """Загрузить свечи за несколько лет и пересчитать переоценку как среднегодовой рост."""

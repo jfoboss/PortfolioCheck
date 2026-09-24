@@ -138,10 +138,21 @@ class NewsMixin:
         cands = (getattr(self, "_last_screen", None).ideas[:15] if getattr(self, "_last_screen", None) else [])
         self.ai_worker = AIWorker(conf, items, self.positions, paths.cache_dir(), manual, cands)
         self.ai_worker.done.connect(self._on_ai)
-        self.ai_worker.failed.connect(lambda m: (log.error("ИИ-сводка: %s", m), self.btn_ai.setEnabled(True),
-                                                 [p.spinner.stop() for p in (self.ai_panel, self.ai_small)],
-                                                 self.set_status(f"ИИ-сводка не удалась: {m[:120]} — показана прошлая сводка")))
+        self.ai_worker.failed.connect(lambda m: self._on_ai_failed(m, conf))
         self.ai_worker.start()
+
+    def _on_ai_failed(self, msg: str, conf: "AI.AIConfig") -> None:
+        """Ошибка свежего запроса: называем модель, к которой ходили, и чья сводка осталась на экране — иначе
+        шапка прошлой сводки («openrouter/free») выглядит так, будто настройка модели не применилась."""
+        model = conf.model or AI.default_model(conf.provider)
+        log.error("ИИ-сводка (%s/%s): %s", conf.provider, model, msg)
+        self.btn_ai.setEnabled(True)
+        for p in (self.ai_panel, self.ai_small):
+            p.spinner.stop()
+        old = getattr(self, "ai_summary", None) or AI.load_summary(paths.cache_dir())
+        shown = (f" — показана прошлая сводка ({old.model}, {old.at.replace('T', ' ')})" if old is not None
+                 else "")
+        self.set_status(f"ИИ-сводка ({model}) не удалась: {msg[:160]}{shown}")
 
     def _on_ai(self, result) -> None:
         summary, note = result if isinstance(result, tuple) else (result, "")

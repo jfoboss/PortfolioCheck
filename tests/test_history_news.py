@@ -99,3 +99,62 @@ def test_short_aliases_match_whole_words_only():
     got = {i.title: i.matched for i in N.match(items, kw)}
     assert got["МТС запускает тариф"] == ["MTSS"] and got["ВТБ снизил ставки"] == ["VTBR"]
     assert "Акции ГМТС и прочее" not in got
+
+
+# ---- кэш свечей: глубина истории ----------------------------------------------------------------
+
+def _fake_sdk(monkeypatch):
+    import sys
+    schemas = NS(CandleInterval=NS(CANDLE_INTERVAL_DAY=5))
+    utils = NS(quotation_to_decimal=lambda q: q)
+    monkeypatch.setitem(sys.modules, "tinkoff", NS(invest=NS(schemas=schemas, utils=utils)))
+    monkeypatch.setitem(sys.modules, "tinkoff.invest", NS(schemas=schemas, utils=utils))
+    monkeypatch.setitem(sys.modules, "tinkoff.invest.schemas", schemas)
+    monkeypatch.setitem(sys.modules, "tinkoff.invest.utils", utils)
+
+
+class FakeMarket:
+    """get_candles с сигнатурой SDK (только именованные); свечи есть с даты `listed`."""
+    def __init__(self, listed_days_ago: int):
+        from datetime import datetime, timezone
+        self.listed = datetime.now(timezone.utc) - timedelta(days=listed_days_ago)
+        self.calls = []
+
+    def get_candles(self, *, from_=None, to=None, interval=None, figi="", instrument_id=""):
+        self.calls.append((from_, to))
+        out, d = [], max(from_, self.listed)
+        while d < to:
+            out.append(NS(time=d, close=100.0)); d += timedelta(days=1)
+        return NS(candles=out)
+
+
+def test_long_history_loaded_once_not_every_refresh(monkeypatch, tmp_path):
+    """Регресс: «Загружаю историю за 5 г» при каждом обновлении. При непустом кэше грузился только хвост (история
+    назад не догружалась), обычное обновление обрезало кэш до 410 дней, а решение «догрузить» принималось по средней
+    глубине — у молодых бумаг она навсегда меньше базы. Переоценка «за 5 лет» фактически считалась примерно за год."""
+    _fake_sdk(monkeypatch)
+    old, young = FakeMarket(10 * 365), FakeMarket(2 * 365)
+    for figi, m in (("OLD", old), ("YOUNG", young)):
+        H.fetch_candles(NS(market_data=m), figi, tmp_path)                 # обычное обновление: ~400 дней
+    five = 5 * 365 + 30
+    assert H.needs_history(tmp_path, "OLD", five) and H.needs_history(tmp_path, "YOUNG", five)
+    for figi, m in (("OLD", old), ("YOUNG", young)):
+        m.calls.clear()
+        s = H.fetch_candles(NS(market_data=m), figi, tmp_path, days=five)
+        assert min(c[0] for c in m.calls) < m.calls[-1][1] - timedelta(days=5 * 365)   # грузили назад, не только хвост
+    assert H.cagr(H.load_cached(tmp_path, "OLD", None), 100.0, 5)[1] > 4.9        # глубина реально 5 лет
+    # молодая бумага: раньше данных нет, и так глубоко уже спрашивали — повторно не нужно
+    assert not H.needs_history(tmp_path, "OLD", five) and not H.needs_history(tmp_path, "YOUNG", five)
+    # обычное обновление (400 дней) грузит только хвост и не стирает пятилетнюю историю
+    old.calls.clear()
+    s = H.fetch_candles(NS(market_data=old), "OLD", tmp_path)
+    assert len(old.calls) == 1 and old.calls[0][0] > old.calls[0][1] - timedelta(days=10)
+    assert s[0][0] >= (date.today() - timedelta(days=411)).strftime("%Y-%m-%d")        # вызывающему — его окно
+    assert not H.needs_history(tmp_path, "OLD", five)
+
+
+def test_load_cached_default_window_is_a_year(tmp_path):
+    """В кэше теперь до 6 лет; риск, история стоимости и карточка по-прежнему видят ~400 дней."""
+    H.save_series(tmp_path, "X", series(1.10, 5))
+    assert len(H.load_cached(tmp_path, "X")) <= 411
+    assert len(H.load_cached(tmp_path, "X", None)) == 5 * 365 + 1

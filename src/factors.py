@@ -49,7 +49,7 @@ def parse_cbr(payload: bytes) -> list[tuple[str, float]]:
 def load(cache_dir: Path, key: str) -> list[tuple[str, float]]:
     """Ряд фактора — в том же формате, что свечи бумаг (history.load_cached)."""
     import history as H
-    return H.load_cached(cache_dir, key)
+    return H.load_cached(cache_dir, key, None)
 
 
 def fresh(cache_dir: Path, key: str) -> bool:

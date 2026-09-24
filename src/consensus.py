@@ -3,8 +3,9 @@ consensus.py — консенсус-прогнозы аналитиков по �
 
 Источник — T-Invest InstrumentsService.GetForecastBy (по instrument uid): консенсус (рекомендация, целевая цена,
 разброс целей) и прогнозы отдельных домов. Это чужие мнения, не рекомендация программы (правило 3 проекта):
-в карточке — отдельным блоком с подписью «справочно». Поля читаются защитно (getattr): формат ответа проверен
-по документации, а не на живом API; при любом расхождении блок просто не показывается.
+в карточке — отдельным блоком с подписью «справочно». Поля читаются защитно (getattr); сигнатура метода и схема
+ответа сверены с tinkoff/invest/services.py и schemas.py SDK: метод принимает объект GetForecastRequest, а при
+отсутствии консенсуса SDK отдаёт не None, а пустой ConsensusItem с нулями — такой ответ считается «консенсуса нет».
 Кэш — cache/forecast_<uid>.json на сутки: карточка не ходит в сеть при каждом открытии.
 """
 from __future__ import annotations
@@ -31,6 +32,8 @@ def _money(v) -> float | None:
 
 def _rec(v) -> str:
     key = getattr(v, "name", v)
+    if key in (0, "RECOMMENDATION_UNSPECIFIED", "", None):
+        return ""
     try:
         return RECOMMENDATION.get(key) or RECOMMENDATION.get(int(v), "") or str(key)
     except (TypeError, ValueError):
@@ -46,7 +49,7 @@ def parse(resp) -> dict | None:
             "target": _money(getattr(c, "consensus", None)), "min": _money(getattr(c, "min_target", None)),
             "max": _money(getattr(c, "max_target", None)), "change_rel": _money(getattr(c, "price_change_rel", None)),
             "currency": getattr(c, "currency", "")}
-    if cons["target"] is None:
+    if not cons["target"] or cons["target"] <= 0:     # пустой ConsensusItem из SDK: нули вместо None
         return None
     targets = []
     for t in getattr(resp, "targets", None) or []:
@@ -67,11 +70,18 @@ def load(cache_dir: Path, uid: str, max_age_s: int = MAX_AGE_S) -> dict | None:
     return JC.read(f) if JC.fresh(f, max_age_s) else None
 
 
+def request(client, uid: str):
+    """GetForecastBy. Метод SDK принимает объект запроса, не именованные аргументы: get_forecast_by(instrument_id=…)
+    падал с TypeError."""
+    from tinkoff.invest.schemas import GetForecastRequest
+    return client.instruments.get_forecast_by(GetForecastRequest(instrument_id=uid))
+
+
 def fetch(token: str, uid: str, cache_dir: Path) -> dict | None:
     """Запрос к T-Invest (только из воркера). Пустой консенсус тоже кэшируется — чтобы не спрашивать каждый раз."""
     import portfolio_check as pc
     with pc.connect(token) as client:
-        resp = client.instruments.get_forecast_by(instrument_id=uid)
+        resp = request(client, uid)
     data = parse(resp) or {"consensus": None, "targets": []}
     JC.write(cache_path(cache_dir, uid), data)
     return data

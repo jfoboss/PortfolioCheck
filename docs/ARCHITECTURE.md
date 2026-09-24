@@ -63,7 +63,8 @@ app.py  ── каркас главного окна: сборка UI, меню
    макро) → `on_loaded` (автоклассификация новых бумаг, снапшот, отрисовка) → `HistoryWorker` (свечи позиций) →
    `NewsWorker` → `ScreenerWorker` → `IdeasEnrichWorker` (свечи кандидатов, изменение за месяц) → `AIWorker`
    (сводка новостей) → `ExecWorker` (сводки экранов одним запросом).
-3. `LongHistoryWorker` — свечи за 3/5 лет для CAGR, только если выбранная база длиннее имеющегося кэша.
+3. `LongHistoryWorker` — свечи за 3/5 лет для CAGR, только если хоть одной бумаге не хватает истории и так глубоко
+   по ней ещё не спрашивали (`history.needs_history`, отметки в `cache/candles_depth.json`).
 4. `FairPriceWorker` — оценки заблокированных бумаг (внебиржа, эталонный тикер).
 
 ## Данные на диске
@@ -77,7 +78,8 @@ Windows `%APPDATA%\PortfolioCheck\`, Linux `$XDG_DATA_HOME/PortfolioCheck/` (о�
 | `config.yaml` | стратегия, классы, правила, настройки, параметры прогноза | настройки, мастер, импорт |
 | `config.yaml.v<N>.bak` | копия конфига версии N перед миграцией | `config_migrate.load_and_migrate` |
 | `snapshots/YYYY-MM-DD.json` | позиции на дату (история стоимости) | `on_loaded` |
-| `cache/candles_<figi или uid>.json` | дневные свечи `[(дата, close)]` | `history.fetch_candles` |
+| `cache/candles_<figi или uid>.json` | дневные свечи `[(дата, close)]`, до 6 лет (`KEEP_DAYS`); `load_cached` по умолчанию отдаёт ~400 дней | `history.fetch_candles` |
+| `cache/candles_depth.json` | `{ключ: дата}` — с какой даты уже спрашивали свечи (у молодой бумаги раньше данных нет — не спрашивать снова) | `history.fetch_candles` |
 | `cache/news.json` | лента | `news.save_cache` |
 | `cache/alerts_state.json` | какие условия оповещений выполнены сейчас (чтобы не повторять) | `alerts.new_hits` |
 | `cache/candles_IMOEX.json`, `cache/candles_USDRUB.json` | ряды факторов для сценариев (раз в сутки) | `factors.fetch_all` |

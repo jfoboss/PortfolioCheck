@@ -73,6 +73,9 @@ class NewsWorker(QThread):
         self.done.emit(NEWS.fetch_news(self.feeds, self.positions, self.aliases, self.bundle))
 
 
+LONG_TYPES = ("share", "etf", "bond", "currency")     # у чего есть дневные свечи для среднегодового роста
+
+
 class LongHistoryWorker(QThread):
     """Свечи за несколько лет по позициям портфеля → среднегодовой рост цены (CAGR) по каждой бумаге."""
     done = Signal(object)          # ({figi: cagr %}, покрытые годы, сколько бумаг без истории)
@@ -91,7 +94,7 @@ class LongHistoryWorker(QThread):
                 for i, p in enumerate(self.positions):
                     if self.isInterruptionRequested():
                         return
-                    if not p.figi or p.instrument_type not in ("share", "etf", "bond", "currency"):
+                    if not p.figi or p.instrument_type not in LONG_TYPES:
                         continue
                     self.progress.emit(f"История {self.years:.0f} г: {i + 1}/{len(self.positions)} ({p.ticker})")
                     series = H.fetch_candles(client, p.figi, self.cache_dir, days=days)

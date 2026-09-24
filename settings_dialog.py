@@ -29,6 +29,7 @@ TARGET_CLASSES = ["gold", "real_estate", "real_estate_wh", "real_estate_other",
                   "equity_core", "equity_spec", "ballast", "foreign"]
 TARGET_LABELS = CLASS_LABELS
 
+from ai import KEY_SERVICE as AI_KEY_SERVICE   # один источник имени — ai.py
 KEYRING_SERVICE = "portfolio-check.tinkoff"
 KEYRING_USER = "invest-api-token"
 INVEST_HOST = "invest-public-api.tinkoff.ru"
@@ -267,15 +268,15 @@ class CheckWorker(QThread):
     done = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, provider: str, key: str, model: str, proxy: str, base_url: str, cache_dir, parent=None):
+    def __init__(self, conf, cache_dir, parent=None):
         super().__init__(parent)             # родитель держит поток живым, даже если окно настроек отпустили
-        self.args = (provider, key, model, proxy, base_url)
-        self.cache_dir = cache_dir
+        self.conf, self.cache_dir = conf, cache_dir
 
     def run(self) -> None:
         import ai as AI
+        c = self.conf
         try:
-            self.done.emit(AI.check_model(*self.args, cache_dir=self.cache_dir))
+            self.done.emit(AI.check_model(c.provider, c.key, c.model, c.proxy, c.base_url, cache_dir=self.cache_dir))
         except Exception as e:  # noqa: BLE001
             self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
 
@@ -972,7 +973,6 @@ class SettingsDialog(QDialog):
 
     # ---- ИИ -----------------------------------------------------------------
 
-    AI_SERVICE = "portfolio-check.ai"
 
     def _tab_ai(self) -> QWidget:
         import ai as AI
@@ -1062,7 +1062,7 @@ class SettingsDialog(QDialog):
     def _ai_tier_info(self) -> None:
         """Сколько бесплатных запросов в сутки доступно этому ключу: зависит от того, покупались ли кредиты."""
         import ai as AI
-        key = SEC.get(self.AI_SERVICE, "openrouter")
+        key = SEC.get(AI_KEY_SERVICE, "openrouter")
         base = ("Лимит бесплатных (:free) моделей — общий на аккаунт: 20 запросов в минуту и 50 в сутки, а после покупки "
                 "кредитов от $10 — 1000 в сутки. Одно обновление приложения тратит 2 запроса (новости + все экраны сразу), "
                 "кнопка «Проверить» — ещё 1.")
@@ -1098,14 +1098,14 @@ class SettingsDialog(QDialog):
         self._models_worker.start()
 
     def _ai_key(self) -> str | None:
-        p = self.ai_provider_key()
-        return "-" if p == "ollama" else SEC.get(self.AI_SERVICE, p)
+        import ai as AI
+        return AI.get_key(self.ai_provider_key())
 
     def _ai_refresh_key_label(self) -> None:
         p = self.ai_provider_key()
         if p == "ollama":
             self.lbl_ai_key.setText("Ключ не нужен — локальная модель"); return
-        self.lbl_ai_key.setText("Ключ: сохранён ✓" if SEC.get(self.AI_SERVICE, p) else "Ключ: не задан")
+        self.lbl_ai_key.setText("Ключ: сохранён ✓" if SEC.get(AI_KEY_SERVICE, p) else "Ключ: не задан")
 
     def _ai_set_key(self) -> None:
         p = self.ai_provider_key()
@@ -1113,11 +1113,11 @@ class SettingsDialog(QDialog):
             return
         key, ok = QInputDialog.getText(self, "API-ключ", f"Ключ для {p}:", QLineEdit.Password)
         if ok and key.strip():
-            SEC.set(self.AI_SERVICE, p, key.strip())
+            SEC.set(AI_KEY_SERVICE, p, key.strip())
             self._ai_refresh_key_label(); self.accessChanged.emit()
 
     def _ai_del_key(self) -> None:
-        SEC.delete(self.AI_SERVICE, self.ai_provider_key())
+        SEC.delete(AI_KEY_SERVICE, self.ai_provider_key())
         self._ai_refresh_key_label(); self.accessChanged.emit()
 
     def _ai_test(self) -> None:
@@ -1128,8 +1128,9 @@ class SettingsDialog(QDialog):
         if getattr(self, "_check_worker", None) is not None and self._check_worker.isRunning():
             return
         self.lbl_ai_test.setText("Проверяю модель (один запрос)…"); self.b_ai_test.setEnabled(False)
-        self._check_worker = CheckWorker(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(),
-                                         self.ai_url.text().strip(), paths.data_dir() / "cache", self)
+        import ai as AI
+        conf = AI.AIConfig(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(), self.ai_url.text().strip())
+        self._check_worker = CheckWorker(conf, paths.data_dir() / "cache", self)
 
         def done(r):
             import ai as AI

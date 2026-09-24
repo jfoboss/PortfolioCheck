@@ -1,4 +1,4 @@
-"""TLS для сайтов (tls.py): корни ОС, а не пути OpenSSL машины сборки."""
+"""TLS для сайтов (net.py): корни ОС, а не пути OpenSSL машины сборки."""
 import ssl
 import sys
 import urllib.error
@@ -6,7 +6,7 @@ import urllib.request
 
 import pytest
 
-import tls
+import net
 
 
 def test_fallback_has_roots_without_openssl_paths(monkeypatch):
@@ -15,18 +15,18 @@ def test_fallback_has_roots_without_openssl_paths(monkeypatch):
     monkeypatch.setitem(sys.modules, "truststore", None)             # import truststore → ImportError
     monkeypatch.setenv("SSL_CERT_FILE", "/nonexistent/cert.pem")
     monkeypatch.setenv("SSL_CERT_DIR", "/nonexistent/certs")
-    tls.system_context.cache_clear()
+    net.system_context.cache_clear()
     try:
-        ctx = tls.system_context()
+        ctx = net.system_context()
         assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname
         assert len(ctx.get_ca_certs()) > 50                          # корни certifi
     finally:
-        tls.system_context.cache_clear()
+        net.system_context.cache_clear()
 
 
 def test_truststore_used_when_available():
-    tls.system_context.cache_clear()
-    ctx = tls.system_context()
+    net.system_context.cache_clear()
+    ctx = net.system_context()
     assert type(ctx).__module__.startswith("truststore") and ctx.verify_mode == ssl.CERT_REQUIRED
 
 
@@ -49,22 +49,20 @@ def _capture(monkeypatch, errors=()):
 
 def test_news_fetch_uses_system_roots(monkeypatch):
     """Регресс: news._fetch шёл с контекстом по умолчанию (пути OpenSSL) — через него же факторы и календарь ЦБ."""
-    import news
     seen = _capture(monkeypatch)
-    assert news._fetch("https://example.org/rss") == b"<rss/>"
-    assert seen == [tls.system_context()]
+    assert net.fetch("https://example.org/rss") == b"<rss/>"
+    assert seen == [net.system_context()]
 
 
 def test_news_legacy_retry_only_for_non_verification_errors(monkeypatch):
     """Регресс: urlopen заворачивает SSLError в URLError — повтор с устаревшими шифрами не срабатывал никогда.
     Непрошедшую проверку сертификата не прощаем: без повтора и без отключения проверки."""
-    import news
     seen = _capture(monkeypatch, [urllib.error.URLError(ssl.SSLError(1, "unsupported protocol"))])
-    assert news._fetch("https://example.org/rss") == b"<rss/>"
-    assert seen[1] is tls.system_context(legacy=True) and seen[1].verify_mode == ssl.CERT_REQUIRED
+    assert net.fetch("https://example.org/rss") == b"<rss/>"
+    assert seen[1] is net.system_context(legacy=True) and seen[1].verify_mode == ssl.CERT_REQUIRED
     seen = _capture(monkeypatch, [urllib.error.URLError(ssl.SSLCertVerificationError(1, "verify failed"))])
     with pytest.raises(urllib.error.URLError):
-        news._fetch("https://example.org/rss")
+        net.fetch("https://example.org/rss")
     assert len(seen) == 1
 
 
@@ -79,4 +77,23 @@ def test_ai_opener_uses_system_roots(monkeypatch):
     with pytest.raises(RuntimeError):
         ai._post("https://openrouter.ai/api/v1/chat/completions", {}, {"model": "x"})
     https = [h for h in got["h"] if isinstance(h, urllib.request.HTTPSHandler)]
-    assert https and https[0]._context is tls.system_context()
+    assert https and https[0]._context is net.system_context()
+
+
+def test_openrouter_catalog_and_key_use_system_roots(monkeypatch):
+    """Регресс: список моделей и проверка ключа OpenRouter строили свой opener без корней ОС — в сборке из CI
+    «Обновить список» и определение бесплатного тарифа падали с CERTIFICATE_VERIFY_FAILED."""
+    import ai
+    seen = []
+
+    def fake_build(*handlers):
+        seen.append(handlers)
+        raise RuntimeError("стоп")
+    monkeypatch.setattr(urllib.request, "build_opener", fake_build)
+    for call in (lambda: ai.fetch_openrouter_models(None, force=True), lambda: ai.openrouter_key_info("k")):
+        with pytest.raises(RuntimeError):
+            call()
+    assert len(seen) == 2
+    for handlers in seen:
+        https = [h for h in handlers if isinstance(h, urllib.request.HTTPSHandler)]
+        assert https and https[0]._context is net.system_context()

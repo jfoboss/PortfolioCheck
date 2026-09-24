@@ -18,6 +18,7 @@ import history as H
 import news as NEWS
 import paths
 import portfolio_check as pc
+import style as ST
 from charts import LineChart
 from ui_common import MASK
 
@@ -152,7 +153,7 @@ class SecurityCard(QDialog):
             html.append("<p style='color:gray'>Фундаментала нет: бумаги нет в кэше скринера (не TQBR или скринер ещё "
                         "не запускался — экран «Идеи» → «Найти»).</p>")
         if d["ai"]:
-            mark = {"positive": "▲ позитив", "negative": "▼ негатив"}.get(d["ai"].get("sentiment"), "■ нейтрально")
+            mark = ST.sentiment_label(d["ai"].get("sentiment"))
             html += ["<h3>ИИ по новостям</h3>", f"{mark}. {d['ai'].get('note', '')}",
                      "<br><span style='color:gray'>Оценка заголовков моделью, не рекомендация.</span>"]
         html += self._consensus_html(d)

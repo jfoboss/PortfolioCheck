@@ -777,7 +777,7 @@ def load_portfolio_full(token: str, cfg: dict) -> tuple[list[Position], Decimal,
     macro = None
     try:
         from macro import fetch_cbr_macro
-        macro = fetch_cbr_macro(_bundle_path())
+        macro = fetch_cbr_macro()
     except Exception as e:  # noqa: BLE001
         _log.warning("макро ЦБ не получено: %s", e)
     return positions, income, macro, payouts

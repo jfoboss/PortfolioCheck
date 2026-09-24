@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import json
 import re
-import ssl
-import urllib.error
-import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+
+import net                         # сеть к сайтам — net.fetch (корни ОС)
 
 DEFAULT_FEEDS = [
     "https://www.interfax.ru/rss.asp",
@@ -77,7 +76,7 @@ FEED_CATALOG = {
 def check_feed(url: str, ca_bundle: Path | None = None) -> tuple[bool, str]:
     """(доступен, описание) — для кнопки «Проверить» в настройках."""
     try:
-        data = _fetch(url, timeout=10)
+        data = net.fetch(url, timeout=10)
         items = parse_feed(data, url)
         return (True, f"{len(items)} новостей") if items else (False, "нет элементов <item>")
     except Exception as e:  # noqa: BLE001
@@ -124,39 +123,6 @@ class NewsItem:
     published: datetime | None
     matched: list[str]      # тикеры, к которым относится
     summary: str = ""
-
-
-UA_DESKTOP = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
-              "Version/18.0 Safari/605.1.15")
-HEADERS = {"User-Agent": UA_DESKTOP,
-           "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
-           "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"}
-
-
-def _fetch(url: str, ca_bundle: Path | None = None, timeout: int = 12) -> bytes:
-    """Сайты (RSS, ISS, ЦБ) — с корнями из системного хранилища ОС (tls.py), не с нашим бандлом для T-Invest.
-    При 403 повторяем с заголовками обычного браузера; при ошибке TLS, кроме непрошедшей проверки сертификата, —
-    с устаревшими шифрами (проверка сертификата остаётся: подмену сертификата не прощаем)."""
-    import tls
-
-    def once(headers: dict, ctx) -> bytes:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
-            return r.read()
-
-    try:
-        return once(HEADERS, tls.system_context())
-    except urllib.error.HTTPError as e:
-        if e.code not in (403, 406, 429):
-            raise
-        h = {**HEADERS, "Referer": re.match(r"https?://[^/]+", url).group(0) + "/",
-             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
-        return once(h, tls.system_context())
-    except urllib.error.URLError as e:
-        # urlopen заворачивает ssl.SSLError в URLError — раньше здесь ловился голый SSLError, и повтор не срабатывал
-        if not isinstance(e.reason, ssl.SSLError) or isinstance(e.reason, ssl.SSLCertVerificationError):
-            raise
-        return once(HEADERS, tls.system_context(legacy=True))
 
 
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -263,7 +229,7 @@ def fetch_news(feeds: list[str], positions, aliases: dict[str, list[str]], ca_bu
     for url in feeds:
         try:
             src = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
-            all_items += parse_feed(_fetch(url), src)
+            all_items += parse_feed(net.fetch(url), src)
         except Exception:  # noqa: BLE001
             failed.append(url)
     kw = build_keywords(positions, {**DEFAULT_ALIASES, **aliases})

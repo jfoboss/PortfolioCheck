@@ -102,9 +102,8 @@ class ExecSummaryMixin:
         return "\n".join(lines)
 
     def run_exec(self, manual: bool = False) -> None:
-        cfg = self.cfg.get("ai") or {}
-        provider = cfg.get("provider", "openrouter"); key = self.ai_key(provider)
-        if not key or not self.positions:
+        conf = self.ai_conf()
+        if conf is None or not self.positions:
             if manual:
                 self.set_status("ИИ-сводки: нужен ключ (Настройки → ИИ) и загруженный портфель.")
             return
@@ -114,9 +113,8 @@ class ExecSummaryMixin:
                 ("market", self._facts_market()), ("strategy", self._facts_strategy())]
         for kind, _ in jobs:
             self.exec_panels[kind].spinner.start("Модель готовит сводку — показана прошлая")
-        self.set_status(f"ИИ-сводки по экранам ({provider})… показаны прошлые")
-        self.exec_worker = ExecWorker(provider, key, cfg.get("model", ""), cfg.get("proxy", ""), cfg.get("base_url", ""), jobs,
-                                      paths.data_dir() / "cache", float(cfg.get("min_interval_h", 6)), manual)
+        self.set_status(f"ИИ-сводки по экранам ({conf.provider})… показаны прошлые")
+        self.exec_worker = ExecWorker(conf, jobs, paths.data_dir() / "cache", manual)
         self.exec_worker.one.connect(self._on_exec_one)
         self.exec_worker.failed.connect(lambda m: (log.error("ИИ-сводка экрана: %s", m), self.set_status(f"ИИ-сводка: {m[:120]}"),
                                                    [p.spinner.stop() for p in self.exec_panels.values()]))
@@ -132,8 +130,7 @@ class ExecSummaryMixin:
 
     def ai_enabled(self) -> bool:
         """Есть ли чем делать сводки: провайдер с ключом (или Ollama)."""
-        cfg = self.cfg.get("ai") or {}
-        return bool(self.ai_key(cfg.get("provider", "openrouter")))
+        return self.ai_conf() is not None
 
     def update_ai_visibility(self) -> None:
         """Без ключа ИИ-панели и кнопка спрятаны — вместо пустых мест."""

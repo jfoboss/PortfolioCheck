@@ -19,7 +19,7 @@
 - **Все сайты — CERTIFICATE_VERIFY_FAILED в dmg из CI** (RSS, ISS, ЦБ, OpenRouter; T-Invest работал) —
   `ssl.create_default_context()` ищет корни по путям OpenSSL, зашитым при сборке Python: у CI это папка
   setup-python на раннере GitHub, на Mac пользователя её нет. Сборка `build_mac.sh` на своём Mac работала — пути
-  совпадали, поэтому ошибка всплыла только с релизным dmg. Теперь `tls.system_context()`: truststore (хранилище
+  совпадали, поэтому ошибка всплыла только с релизным dmg. Теперь `net.system_context()`: truststore (хранилище
   ОС), запасной — certifi. Заодно: повтор с устаревшими шифрами в `news._fetch` не срабатывал никогда —
   `urlopen` заворачивает `SSLError` в `URLError`.
 

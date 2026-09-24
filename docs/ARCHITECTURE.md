@@ -31,7 +31,7 @@ app.py  ── каркас главного окна: сборка UI, меню
   payouts.py          ── календарь выплат: прошлые/объявленные из GetDividends, «ожидается» по прошлому году, поток
   ai.py               ── провайдеры LLM, сводки, кэш ответов, каталог OpenRouter, разбор 429
   macro.py            ── инфляция и ставка с сайта ЦБ РФ; календарь решений по ставке (cache/macro_calendar.json)
-  tls.py              ── TLS для сайтов: корни хранилища ОС (truststore), запасной — certifi; не для T-Invest
+  net.py              ── сеть к сайтам (RSS, ISS, ЦБ, ИИ): fetch, get_json, opener с прокси; TLS — корни ОС (truststore)
   paths.py            ── где лежат данные (локально / iCloud Drive), миграция; папка по ОС (macOS / Windows / Linux)
   osutil.py           ── различия ОС: платформа, подписи сочетаний клавиш, моноширинный шрифт, имя хранилища секретов
   config_migrate.py   ── config_version и явные миграции формата конфига

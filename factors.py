@@ -5,7 +5,7 @@ factors.py — рыночные факторы для сценариев (BACKLO
            эндпоинт истории индекса работает, в отличие от убранного /securities/{t}/dividends);
   USDRUB — официальный курс ЦБ: /scripts/XML_dynamic.asp (без токена).
 Ряды кэшируются как свечи — cache/candles_IMOEX.json, cache/candles_USDRUB.json — и догружаются не чаще раза в сутки.
-Сеть — только из воркера (FactorsWorker). Сайты — с системными корнями TLS, как RSS (news._fetch).
+Сеть — только из воркера (FactorsWorker). Сайты — через net.fetch (корни ОС).
 """
 from __future__ import annotations
 
@@ -60,11 +60,11 @@ def fresh(cache_dir: Path, key: str) -> bool:
 
 
 def fetch_all(cache_dir: Path, days: int = 400, fetch=None, today: date | None = None) -> dict[str, str]:
-    """Догрузить оба ряда (если кэш старше суток). fetch(url) → bytes; по умолчанию news._fetch (системные корни).
+    """Догрузить оба ряда (если кэш старше суток). fetch(url) → bytes; по умолчанию net.fetch (корни ОС).
     Возвращает {ключ: "ok" | текст ошибки} — ошибка одного ряда не мешает другому."""
     if fetch is None:
-        import news
-        fetch = news._fetch
+        import net
+        fetch = net.fetch
     today = today or date.today()
     frm = today - timedelta(days=days)
     status = {}

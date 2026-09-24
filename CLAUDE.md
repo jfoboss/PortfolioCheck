@@ -58,7 +58,7 @@
 - **Модальные окна в тестах** (`SetupWizard.exec`) подменяй, иначе тест зависнет.
 - **MOEX ISS убрал `/securities/{t}/dividends`** — фундаментал и дивиденды берём из T-Invest
   (`GetAssetFundamentals`, `GetDividends`).
-- **Сайты (RSS, ISS, ЦБ, ИИ) — только через `tls.system_context()`** (корни ОС через truststore), не
+- **Сайты (RSS, ISS, ЦБ, ИИ) — только через `net.system_context()`** (корни ОС через truststore), не
   `ssl.create_default_context()`: в собранной программе пути OpenSSL — от машины сборки, dmg из CI не видел ни
   одного сайта. T-Invest — свой бандл с корнем Минцифры. Ленты бывают Atom.
 - **Новый график — с `need_height()`**, несколько графиков в колонке — в `widgets.scroll_wrap`: иначе на экране

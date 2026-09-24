@@ -158,21 +158,22 @@ class AIWorker(QThread):
     done = Signal(object)      # (Summary, note)
     failed = Signal(str)
 
-    def __init__(self, provider, key, model, news_items, positions, proxy, base_url, cache_dir, min_interval_h, force, candidates=None):
+    def __init__(self, conf: "AI.AIConfig", news_items, positions, cache_dir, force, candidates=None):
         super().__init__()
-        self.args = (provider, key, model, news_items, positions, proxy, base_url)
-        self.cache_dir, self.min_interval_h, self.force, self.candidates = cache_dir, min_interval_h, force, candidates or []
+        self.conf, self.news_items, self.positions = conf, news_items, positions
+        self.cache_dir, self.force, self.candidates = cache_dir, force, candidates or []
 
     def run(self) -> None:
-        provider, key, model, news_items, positions, proxy, base_url = self.args
+        c = self.conf
         cache = AI.ResponseCache(self.cache_dir)
-        fp = AI.news_fingerprint(news_items, provider, model, self.candidates)
-        subj = AI.subjects_fingerprint(positions, self.candidates)
-        hit, why = cache.get("news", fp, self.min_interval_h, self.force, subj)
+        fp = AI.news_fingerprint(self.news_items, c.provider, c.model, self.candidates)
+        subj = AI.subjects_fingerprint(self.positions, self.candidates)
+        hit, why = cache.get("news", fp, c.min_interval_h, self.force, subj)
         if hit:
             self.done.emit((AI.Summary(**hit), f"из кэша: {why}")); return
         try:
-            s = AI.summarize(*self.args, candidates=self.candidates)
+            s = AI.summarize(c.provider, c.key, c.model, self.news_items, self.positions, c.proxy, c.base_url,
+                             candidates=self.candidates)
             cache.put("news", fp, __import__("dataclasses").asdict(s), subj)
             self.done.emit((s, ""))
         except AI.RateLimited as e:
@@ -187,25 +188,25 @@ class ExecWorker(QThread):
     failed = Signal(str)
     done = Signal()
 
-    def __init__(self, provider, key, model, proxy, base_url, jobs: list, cache_dir, min_interval_h, force):
+    def __init__(self, conf: "AI.AIConfig", jobs: list, cache_dir, force):
         super().__init__()
-        self.provider, self.key, self.model, self.proxy, self.base_url, self.jobs = provider, key, model, proxy, base_url, jobs
-        self.cache_dir, self.min_interval_h, self.force = cache_dir, min_interval_h, force
+        self.conf, self.jobs, self.cache_dir, self.force = conf, jobs, cache_dir, force
 
     def run(self) -> None:
         """Сначала всё, что есть в кэше; устаревшие экраны — ОДНИМ запросом (лимиты считаются в запросах)."""
         cache = AI.ResponseCache(self.cache_dir)
         todo, fps = [], {}
         for kind, facts in self.jobs:
-            fp = AI.exec_fingerprint(kind, facts, self.provider, self.model); fps[kind] = fp
-            hit, why = cache.get(f"exec_{kind}", fp, self.min_interval_h, self.force)
+            fp = AI.exec_fingerprint(kind, facts, self.conf.provider, self.conf.model); fps[kind] = fp
+            hit, why = cache.get(f"exec_{kind}", fp, self.conf.min_interval_h, self.force)
             if hit:
                 self.one.emit((AI.ExecSummary(**hit), f"из кэша: {why}"))
             else:
                 todo.append((kind, facts))
         if todo and not self.isInterruptionRequested():
             try:
-                got = AI.exec_summary_batch(todo, self.provider, self.key, self.model, self.proxy, self.base_url)
+                c = self.conf
+                got = AI.exec_summary_batch(todo, c.provider, c.key, c.model, c.proxy, c.base_url)
                 for s in got:
                     cache.put(f"exec_{s.kind}", fps[s.kind], __import__("dataclasses").asdict(s))
                     self.one.emit((s, ""))

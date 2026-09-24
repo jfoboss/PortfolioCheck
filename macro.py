@@ -17,10 +17,8 @@ from __future__ import annotations
 import html as _html
 import json
 import re
-import ssl
 import time
 from datetime import date
-import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -42,13 +40,10 @@ class Macro:
     target: float        # цель ЦБ, %
 
 
-def fetch_cbr_macro(ca_bundle: Path | None = None, timeout: int = 15) -> Macro:
-    import tls
-    ctx = ssl.create_default_context(cafile=str(ca_bundle)) if ca_bundle and ca_bundle.exists() else tls.system_context()
-    req = urllib.request.Request(CBR_URL, headers={"User-Agent": "Mozilla/5.0 PortfolioCheck"})
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-        html = resp.read().decode("utf-8", "replace")
-    return parse_cbr_table(html)
+def fetch_cbr_macro(timeout: int = 15) -> Macro:
+    """Сайт ЦБ — с корнями ОС (net.fetch), как остальные сайты; бандл T-Invest здесь не нужен."""
+    import net
+    return parse_cbr_table(net.fetch(CBR_URL, timeout=timeout).decode("utf-8", "replace"))
 
 
 def parse_cbr_table(html: str) -> Macro:
@@ -121,8 +116,8 @@ def fetch_calendar(cache_dir: Path, fetch=None) -> str:
     if calendar_fresh(cache_dir):
         return "ok"
     if fetch is None:
-        import news
-        fetch = news._fetch                    # системные корни TLS, как RSS
+        import net
+        fetch = net.fetch                      # корни ОС
     try:
         save_calendar(parse_cbr_calendar(fetch(CAL_URL).decode("utf-8", "replace")), cache_dir)
         return "ok"

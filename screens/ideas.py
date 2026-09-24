@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor
 
 import portfolio_check as pc
 import paths
-import ai as AI
+import style as ST
 from diagnostics import log
 import news as NEWS
 import screener as SCR
@@ -158,9 +158,9 @@ class IdeasMixin:
         rows = []
         for i in ideas:
             mc = getattr(i, "month_change", None)
-            month = "…" if mc is None else f"{'▲' if mc > 0 else ('▼' if mc < 0 else '■')} {mc:+.1f}%"
+            month = "…" if mc is None else f"{ST.arrow(mc)} {mc:+.1f}%"
             sent = getattr(i, "news_sentiment", "") or ("neutral" if getattr(i, "news_count", 0) else "")
-            news = (AI.SENT_MARK.get(sent, "") + (f" {i.news_count}" if getattr(i, "news_count", 0) else "")) if sent else "—"
+            news = (ST.sentiment(sent)[0] + (f" {i.news_count}" if getattr(i, "news_count", 0) else "")) if sent else "—"
             rows.append(([i.name, i.ticker, i.sector, month, news, f"{i.price:,.2f}", f"{i.cap_bln:,.0f}", f"{i.div_yield:.1f}%",
                           fmt(getattr(i, "avg5y_div_yield", None), "{:.1f}%"), f"{i.div_per_share:,.2f}",
                           fmt(i.pe), fmt(i.net_debt_ebitda), fmt(i.roe, "{:.1f}%"), fmt(i.free_float, "{:.0f}%"), i.ex_div_date],
@@ -179,17 +179,18 @@ class IdeasMixin:
             mc = getattr(i, "month_change", None)
             cm = self.tbl_ideas.item(r, 3)
             if cm is not None:
-                cm.setForeground(QColor("#34C759" if (mc or 0) > 0 else ("#FF453A" if (mc or 0) < 0 else "gray")))
+                cm.setForeground(QColor(ST.sign_color(mc or 0)))
                 cm.setToolTip(f"Цена за месяц: {mc:+.1f}%" if mc is not None else "Свечи ещё грузятся")
             cn = self.tbl_ideas.item(r, 4)
             if cn is not None:
                 s = getattr(i, "news_sentiment", "")
-                cn.setForeground(QColor(AI.SENT_COLOR.get(s, "gray")))
+                mark_, color_, title_ = ST.sentiment(s)
+                cn.setForeground(QColor(color_ if s else "gray"))
                 note = getattr(i, "news_note", "")
                 if s and i.news_count:
-                    tip = f"{AI.SENT_TITLE.get(s, '')}; упоминаний в ленте: {i.news_count}"
+                    tip = f"{title_}; упоминаний в ленте: {i.news_count}"
                 elif s:
-                    tip = f"{AI.SENT_TITLE.get(s, '')} — оценка по отраслевому контексту (прямых новостей нет)"
+                    tip = f"{title_} — оценка по отраслевому контексту (прямых новостей нет)"
                 else:
                     tip = "В ленте нет новостей по бумаге"
                 cn.setToolTip(tip + (f"\n{note}" if note else ""))

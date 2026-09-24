@@ -17,11 +17,47 @@ import logging
 import re
 import urllib.error
 import urllib.request
+
+import net
+import style as ST
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 
 log = logging.getLogger("portfolio.ai")
+
+KEY_SERVICE = "portfolio-check.ai"          # ключи провайдеров — в системном хранилище (secrets_store), не в конфиге
+
+
+@dataclass(frozen=True)
+class AIConfig:
+    """Всё, что нужно для запроса к модели: из раздела `ai` конфига + ключ из хранилища. Один объект вместо
+    семи позиционных аргументов — раньше порядок у AIWorker, ExecWorker и CheckWorker отличался."""
+    provider: str
+    key: str
+    model: str = ""
+    proxy: str = ""
+    base_url: str = ""
+    min_interval_h: float = 6.0
+
+
+def get_key(provider: str) -> str | None:
+    """Ключ провайдера; локальной Ollama ключ не нужен ("-")."""
+    if provider == "ollama":
+        return "-"
+    import secrets_store as SEC
+    return SEC.get(KEY_SERVICE, provider)
+
+
+def resolve(cfg_ai: dict | None, key_getter=None) -> AIConfig | None:
+    """Раздел `ai` конфига → AIConfig; None, если ключ не задан (ИИ выключен)."""
+    c = cfg_ai or {}
+    provider = c.get("provider", "openrouter")
+    key = (key_getter or get_key)(provider)
+    if not key:
+        return None
+    return AIConfig(provider, key, c.get("model", ""), c.get("proxy", ""), c.get("base_url", ""),
+                    float(c.get("min_interval_h", 6)))
 
 PROVIDERS = {
     # по умолчанию — бесплатная модель: ИИ-сводки работают сразу после создания ключа, баланс не тратится
@@ -183,10 +219,13 @@ def _chat(provider: str, key: str, model: str, system: str, user: str, proxy: st
 def exec_summary(kind: str, facts: str, provider: str, key: str, model: str, proxy: str = "", base_url: str = "") -> ExecSummary:
     text = _chat(provider, key, model, EXEC_SYSTEMS[kind], facts, proxy, base_url)
     d = _extract_json(text)
-    def lst(x):
-        return [str(i) for i in (x or [])][:5]
     return ExecSummary(kind, datetime.now().isoformat(timespec="minutes"), provider, model or default_model(provider),
-                       str(d.get("headline", "")), lst(d.get("good")), lst(d.get("bad")), lst(d.get("watch")))
+                       str(d.get("headline", "")), _lst(d.get("good")), _lst(d.get("bad")), _lst(d.get("watch")))
+
+
+def _lst(x) -> list[str]:
+    """Пункты сводки из ответа модели: строки, не больше пяти."""
+    return [str(i) for i in (x or [])][:5]
 
 
 EXEC_BATCH_SYSTEM = ("Ты личный аналитик инвестора. Ниже — данные по нескольким экранам его приложения, каждый в своём "
@@ -206,15 +245,13 @@ def exec_summary_batch(jobs: list[tuple[str, str]], provider: str, key: str, mod
     user = "\n\n".join(f"===ЭКРАН: {kind}===\n{facts}" for kind, facts in jobs)
     text = _chat(provider, key, model, EXEC_BATCH_SYSTEM, user, proxy, base_url, max_tokens=600 * len(jobs))
     d = _extract_json(text)
-    def lst(x):
-        return [str(i) for i in (x or [])][:5]
     at = datetime.now().isoformat(timespec="minutes"); m = model or default_model(provider)
     out = []
     for kind, _ in jobs:
         part = d.get(kind) or {}
         if part:
-            out.append(ExecSummary(kind, at, provider, m, str(part.get("headline", "")), lst(part.get("good")),
-                                   lst(part.get("bad")), lst(part.get("watch"))))
+            out.append(ExecSummary(kind, at, provider, m, str(part.get("headline", "")), _lst(part.get("good")),
+                                   _lst(part.get("bad")), _lst(part.get("watch"))))
     return out
 
 
@@ -242,10 +279,18 @@ def render_exec_html(s: ExecSummary, mask=None, note: str = "") -> str:
                 f"<div title='{title}' style='color:{color};font-weight:700;font-size:15px'>{mark}</div>"
                 f"<ul style='margin:2px 0 0 14px;padding:0'>{lis}</ul></td>")
     return (f"<div style='font-weight:600;font-size:13px'>{m(s.headline)}</div>"
-            f"<table style='width:100%'><tr>{col('✓', 'Хорошо', '#34C759', s.good)}{col('✕', 'Плохо', '#FF453A', s.bad)}"
-            f"{col('⚑', 'Следить', '#FF9F0A', s.watch)}</tr></table>"
-            f"<div style='color:gray;font-size:11px'>ИИ · {s.provider}/{s.model} · {s.at.replace('T', ' ')}"
-            + (f" · {note}" if note else "") + " · оценка, не рекомендация</div>")
+            f"<table style='width:100%'><tr>{col('✓', 'Хорошо', ST.GOOD, s.good)}{col('✕', 'Плохо', ST.BAD, s.bad)}"
+            f"{col('⚑', 'Следить', ST.WARN, s.watch)}</tr></table>"
+            + _meta_html("ИИ", s.provider, s.model, s.at, note, "оценка, не рекомендация"))
+
+
+def _meta_html(label: str, provider: str, model: str, at: str, *extra: str) -> str:
+    """Серая строка под сводкой: «ИИ · провайдер/модель · время · …» — одинаковая у всех сводок."""
+    tail = "".join(f" · {x}" for x in extra if x)
+    return f"<div style='color:gray;font-size:11px'>{label} · {provider}/{model} · {at.replace('T', ' ')}{tail}</div>"
+
+
+DISCLAIMER_HTML = "<div style='color:gray;font-size:11px'>Модель оценивает заголовки, не отчётность; это не рекомендация.</div>"
 
 
 SYSTEM = ("Ты аналитик российского фондового рынка. Тебе дают список заголовков новостей и список бумаг инвестора. "
@@ -359,13 +404,8 @@ def _describe_429(e, body: dict) -> RateLimited:
 def _post(url: str, headers: dict, body: dict, proxy: str = "", timeout: int = 120) -> dict:
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", **headers}, method="POST")
-    import tls
-    handlers = [tls.https_handler()]                 # системные корни ОС — иначе собранная программа не видит OpenRouter
-    if proxy:
-        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
-    opener = urllib.request.build_opener(*handlers)
     try:
-        with opener.open(req, timeout=timeout) as r:
+        with net.opener(proxy).open(req, timeout=timeout) as r:       # корни ОС — иначе собранная программа не видит сайт
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         model = str(body.get("model", ""))
@@ -613,16 +653,11 @@ def load_summary(cache_dir: Path) -> Summary | None:
 
 
 # Знаки тональности — как на терминалах (Bloomberg/Reuters/биржевые табло): ▲ вверх, ▼ вниз, ■ без изменений.
-SENT_MARK = {"positive": "▲", "neutral": "■", "negative": "▼"}
-SENT_COLOR = {"positive": "#34C759", "neutral": "#8E8E93", "negative": "#FF453A"}
-SENT_TITLE = {"positive": "Позитив для бумаги", "neutral": "Нейтрально", "negative": "Негатив для бумаги"}
 
 
 def render_html(s: Summary, names: dict[str, str], privacy: bool = False, note: str = "") -> str:
     """HTML для панели: общий вывод, макро, по бумагам со знаками тональности."""
-    colors, labels = SENT_COLOR, SENT_TITLE
-    parts = [f"<div style='color:gray;font-size:11px'>ИИ-сводка · {s.provider} / {s.model} · {s.at.replace('T', ' ')} · {s.news_count} новостей"
-             + (f" · {note}" if note else "") + "</div>"]
+    parts = [_meta_html("ИИ-сводка", s.provider, s.model, s.at, f"{s.news_count} новостей", note)]
     if s.overall:
         parts.append(f"<p>{s.overall}</p>")
     if s.macro:
@@ -630,15 +665,13 @@ def render_html(s: Summary, names: dict[str, str], privacy: bool = False, note: 
     if s.items:
         rows = []
         for it in s.items:
-            col = colors.get(it["sentiment"], "#8E8E93")
-            mark = SENT_MARK.get(it["sentiment"], "■")
-            title = labels.get(it["sentiment"], "")
+            mark, col, title = ST.sentiment(it["sentiment"])
             rows.append(f"<tr><td title='{title}' style='padding:2px 6px 2px 0;color:{col};font-weight:700'>{mark}</td>"
                         f"<td style='padding:2px 8px 2px 0'><span style='background:{col};color:white;border-radius:4px;"
                         f"padding:1px 6px;font-weight:600'>{it['ticker']}</span></td>"
                         f"<td style='padding:2px 0'>{names.get(it['ticker'], '')}: {it['note']}</td></tr>")
         parts.append("<table>" + "".join(rows) + "</table>")
-    parts.append("<div style='color:gray;font-size:11px'>Модель оценивает заголовки, не отчётность; это не рекомендация.</div>")
+    parts.append(DISCLAIMER_HTML)
     return "".join(parts)
 
 
@@ -708,10 +741,7 @@ def fetch_openrouter_models(cache_dir: Path | None = None, proxy: str = "", max_
                 return parse_openrouter_models(saved["data"]), "кэш"
         except Exception:  # noqa: BLE001
             pass
-    handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy})] if proxy else []
-    req = urllib.request.Request(OPENROUTER_MODELS_URL, headers={"User-Agent": "PortfolioCheck"})
-    with urllib.request.build_opener(*handlers).open(req, timeout=20) as r:
-        data = json.loads(r.read().decode("utf-8"))
+    data = net.get_json(OPENROUTER_MODELS_URL, proxy=proxy)
     if f:
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(json.dumps({"at": datetime.now().isoformat(), "data": data}, ensure_ascii=False), encoding="utf-8")
@@ -732,8 +762,5 @@ def model_label(m: dict) -> str:
 
 def openrouter_key_info(key: str, proxy: str = "") -> dict:
     """{'free_tier': bool|None, 'label': str} по GET /api/v1/auth/key. Ключ без покупки кредитов — 50 бесплатных запросов в сутки."""
-    handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy})] if proxy else []
-    req = urllib.request.Request("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {key}"})
-    with urllib.request.build_opener(*handlers).open(req, timeout=15) as r:
-        d = (json.loads(r.read().decode("utf-8")) or {}).get("data") or {}
+    d = (net.get_json("https://openrouter.ai/api/v1/auth/key", {"Authorization": f"Bearer {key}"}, proxy, 15) or {}).get("data") or {}
     return {"free_tier": d.get("is_free_tier"), "label": d.get("label", ""), "usage": d.get("usage")}

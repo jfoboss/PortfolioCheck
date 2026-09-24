@@ -120,13 +120,13 @@ class ConnectivityWorker(QThread):
 
         def cbr():
             from macro import fetch_cbr_macro
-            m = fetch_cbr_macro(self.bundle); return f"{m.period}: инфляция {m.inflation}%, ставка {m.key_rate}%"
+            m = fetch_cbr_macro(); return f"{m.period}: инфляция {m.inflation}%, ставка {m.key_rate}%"
         check("ЦБ РФ (инфляция)", cbr)
 
         def factor(url_tmpl, parse, what):
             def run():
                 from datetime import date, timedelta
-                from news import _fetch
+                from net import fetch as _fetch
                 t = date.today(); f = t - timedelta(days=10)
                 url = url_tmpl.format(frm=f"{f:%d/%m/%Y}" if "cbr" in url_tmpl else f.isoformat(),
                                       till=f"{t:%d/%m/%Y}" if "cbr" in url_tmpl else t.isoformat(), start=0)
@@ -140,7 +140,7 @@ class ConnectivityWorker(QThread):
         def calendar():
             from datetime import date
             import macro
-            from news import _fetch
+            from net import fetch as _fetch
             ev = macro.upcoming(macro.parse_cbr_calendar(_fetch(macro.CAL_URL).decode("utf-8", "replace")), date.today())
             meet = next((e for e in ev if e.kind == macro.MEETING), None)
             return f"событий {len(ev)}, ближайшее заседание {meet.date}" if meet else f"событий {len(ev)}, заседаний впереди нет"

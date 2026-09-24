@@ -58,7 +58,8 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --collect-submodules screens \
   --hidden-import wizard \
   --add-data "docs:docs" \
-  --hidden-import tls \
+  --hidden-import net \
+  --hidden-import style \
   --hidden-import truststore \
   --hidden-import certifi \
   --hidden-import portfolio_check \

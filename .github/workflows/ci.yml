@@ -1,16 +1,32 @@
-# Тесты на трёх ОС и сборка для Windows. Сеть в тестах запрещена (tests/conftest.py), токены не нужны.
+# Тесты и сборки. Сеть в тестах запрещена (tests/conftest.py), токены не нужны.
+#
+# Экономия минут Actions (минуты macOS считаются ×10, Windows ×2; каждое задание округляется до минуты):
+#   PR                 — тесты на Ubuntu и Windows (+ pyflakes, check_private) — ~3 мин вместо ~40;
+#   push в main        — полный набор: тесты на трёх ОС + три сборки с запуском в демо;
+#   вручную            — Actions → CI → Run workflow: полный набор на любой ветке (перед рискованным мержем).
+# Push в рабочие ветки CI не запускает (раньше каждое изменение шло дважды: push + PR). Правки только
+# документации CI не запускают. Новый push в PR отменяет ещё идущий прогон той же ветки.
 name: CI
 
 on:
   push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
   pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   tests:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # в PR — без macOS (×10 к минутам); macOS — на main и при ручном запуске
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
@@ -37,6 +53,7 @@ jobs:
 
   build-windows:
     needs: tests
+    if: github.event_name != 'pull_request'     # сборки — на main и вручную, не на каждый PR
     runs-on: windows-latest
     env:
       PYTHONUTF8: "1"
@@ -67,6 +84,7 @@ jobs:
 
   build-macos:
     needs: tests
+    if: github.event_name != 'pull_request'     # сборки — на main и вручную, не на каждый PR
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,6 +107,7 @@ jobs:
 
   build-linux:
     needs: tests
+    if: github.event_name != 'pull_request'     # сборки — на main и вручную, не на каждый PR
     runs-on: ubuntu-22.04          # старее glibc — сборка запустится на большем числе дистрибутивов
     env:
       QT_QPA_PLATFORM: offscreen

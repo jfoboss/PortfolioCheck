@@ -235,6 +235,24 @@ class TierWorker(QThread):
             self.done.emit({})
 
 
+class CheckWorker(QThread):
+    """Проверка модели по кнопке — в фоне: запрос к модели может идти десятки секунд, окно не должно замирать."""
+    done = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, provider: str, key: str, model: str, proxy: str, base_url: str, cache_dir, parent=None):
+        super().__init__(parent)             # родитель держит поток живым, даже если окно настроек отпустили
+        self.args = (provider, key, model, proxy, base_url)
+        self.cache_dir = cache_dir
+
+    def run(self) -> None:
+        import ai as AI
+        try:
+            self.done.emit(AI.check_model(*self.args, cache_dir=self.cache_dir))
+        except Exception as e:  # noqa: BLE001
+            self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
+
+
 class ModelPicker(QWidget):
     """Поле модели: для OpenRouter — выпадающий список с поиском по подстроке, фильтр бесплатных и ★ рекомендуемые;
     для остальных провайдеров — обычное поле ввода. Интерфейс как у QLineEdit: text / setText / textChanged."""
@@ -876,6 +894,7 @@ class SettingsDialog(QDialog):
         self.ai_model = ModelPicker(cfg.get("model", "")); self.ai_model.setPlaceholderText("по умолчанию для провайдера")
         self.ai_model.b_reload.clicked.connect(lambda: self._load_models(force=True))
         self.ai_model.textChanged.connect(self._touch)
+        self.ai_model.textChanged.connect(self._ai_show_last_check)
         self.ai_proxy = QLineEdit(cfg.get("proxy", "")); self.ai_proxy.setPlaceholderText("http://host:port или socks5h://host:port — если нужен")
         self.ai_proxy.textChanged.connect(self._touch)
         self.ai_url = QLineEdit(cfg.get("base_url", "")); self.ai_url.setPlaceholderText("оставь пустым для стандартного")
@@ -905,7 +924,9 @@ class SettingsDialog(QDialog):
         row = QHBoxLayout()
         self.lbl_ai_key = QLabel()
         b_set, b_del, b_test = QPushButton("Задать ключ…"), QPushButton("Удалить"), QPushButton("Проверить")
-        b_test.setToolTip("Отправляет один короткий запрос — он тоже считается в лимите бесплатных моделей")
+        b_test.setToolTip("Один запрос: отвечает ли модель строгим JSON по схеме и по-русски — это нужно для сводок. "
+                          "Запрос считается в лимите бесплатных моделей; результат запоминается для каждой модели")
+        self.b_ai_test = b_test
         b_set.clicked.connect(self._ai_set_key); b_del.clicked.connect(self._ai_del_key); b_test.clicked.connect(self._ai_test)
         row.addWidget(self.lbl_ai_key, 1); row.addWidget(b_set); row.addWidget(b_del); row.addWidget(b_test)
         lay.addLayout(row)
@@ -931,7 +952,16 @@ class SettingsDialog(QDialog):
             self._ai_tier_info()
         if p == "openrouter" and not self.ai_model.models:
             self._load_models(force=False)
-        self._ai_refresh_key_label(); self._touch()
+        self._ai_refresh_key_label(); self._ai_show_last_check(); self._touch()
+
+    def _ai_show_last_check(self, *_) -> None:
+        """Результат прошлой проверки выбранной модели — без нового запроса."""
+        import ai as AI
+        import paths
+        if not hasattr(self, "lbl_ai_test"):
+            return
+        r = AI.last_check(self.ai_provider_key(), self.ai_model.text().strip(), paths.data_dir() / "cache")
+        self.lbl_ai_test.setText(AI.describe_check(r) if r else "")
 
     def _ai_tier_info(self) -> None:
         """Сколько бесплатных запросов в сутки доступно этому ключу: зависит от того, покупались ли кредиты."""
@@ -995,16 +1025,24 @@ class SettingsDialog(QDialog):
         self._ai_refresh_key_label(); self.accessChanged.emit()
 
     def _ai_test(self) -> None:
-        import ai as AI
+        import paths
         p = self.ai_provider_key(); key = self._ai_key()
         if not key:
             self.lbl_ai_test.setText("Сначала задай ключ."); return
-        self.lbl_ai_test.setText("Проверяю…"); QApplication.processEvents()
-        try:
-            ans = AI.ping(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(), self.ai_url.text().strip())
-            self.lbl_ai_test.setText(f"✓ Ответ модели: {ans.strip()[:80]}")
-        except Exception as e:  # noqa: BLE001
-            self.lbl_ai_test.setText(f"✗ {type(e).__name__}: {str(e)[:200]}")
+        if getattr(self, "_check_worker", None) is not None and self._check_worker.isRunning():
+            return
+        self.lbl_ai_test.setText("Проверяю модель (один запрос)…"); self.b_ai_test.setEnabled(False)
+        self._check_worker = CheckWorker(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(),
+                                         self.ai_url.text().strip(), paths.data_dir() / "cache", self)
+
+        def done(r):
+            import ai as AI
+            self.b_ai_test.setEnabled(True); self.lbl_ai_test.setText(AI.describe_check(r))
+
+        def failed(m):
+            self.b_ai_test.setEnabled(True); self.lbl_ai_test.setText(f"✗ {m}")
+        self._check_worker.done.connect(done); self._check_worker.failed.connect(failed)
+        self._check_worker.start()
 
     # ---- Доступ -------------------------------------------------------------
 
@@ -1178,10 +1216,10 @@ class SettingsDialog(QDialog):
         return it.text().strip() if it else ""
 
     def closeEvent(self, event) -> None:
-        for name in ("_models_worker", "_tier_worker"):
+        for name, ms in (("_models_worker", 3000), ("_tier_worker", 3000), ("_check_worker", 60000)):
             wk = getattr(self, name, None)
             if wk is not None and wk.isRunning():
-                wk.wait(3000)              # каталог моделей — короткий запрос, дожидаемся, чтобы не убить живой поток
+                wk.wait(ms)                # дожидаемся, чтобы не уничтожить живой поток (SIGABRT)
         # На закрытие — дописать то, что ещё не ушло по таймеру
         if self._timer.isActive():
             self._timer.stop()

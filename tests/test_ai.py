@@ -126,3 +126,30 @@ def test_daily_block_survives_restart(catalog, monkeypatch):
     assert ai.load_rate_block() is None and ai.RATE_BLOCK_UNTIL is None
     (catalog / ai.RATE_BLOCK_FILE).write_text("мусор")
     assert ai.load_rate_block() is None
+
+
+@pytest.mark.parametrize("answer,verdict", [
+    ('{"sum": 42, "city": "Москва", "items": ["спад", "падение", "снижение"], "sentiment": "negative"}', "good"),
+    ('```json\n{"sum": 42, "city": "Москва", "items": ["спад", "падение", "снижение"], "sentiment": "negative"}\n```', "good"),
+    ('{"sum": 41, "city": "Moscow", "items": ["decline"], "sentiment": "neutral"}', "partial"),
+    ("Конечно! Вот ответ: сумма 42, столица — Москва.", "bad"),
+])
+def test_model_check_verdicts(answer, verdict):
+    assert ai.evaluate_check(answer)["verdict"] == verdict
+
+
+def test_check_model_one_request_and_remembered(catalog, monkeypatch):
+    """Проверка модели — ровно один запрос; результат запоминается по модели и показывается без нового запроса."""
+    calls = []
+
+    def ok(req, timeout=0):
+        calls.append(json.loads(req.data))
+        ans = '{"sum": 42, "city": "Москва", "items": ["спад", "падение", "снижение"], "sentiment": "negative"}'
+        return _Resp(json.dumps({"choices": [{"message": {"content": ans}}]}).encode())
+    monkeypatch.setattr(urllib.request, "build_opener", _opener(ok))
+    r = ai.check_model("openrouter", "k", "", cache_dir=catalog)
+    assert len(calls) == 1 and r["verdict"] == "good" and r["model"] == "z-ai/glm-5.2:free"
+    again = ai.last_check("openrouter", "", catalog)
+    assert again["verdict"] == "good" and len(calls) == 1
+    assert "подходит" in ai.describe_check(again)
+    assert ai.last_check("openrouter", "other/model", catalog) is None

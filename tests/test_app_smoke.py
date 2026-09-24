@@ -73,3 +73,25 @@ def test_banner_retry_only_for_icloud(window):
     assert window.banner_retry.isHidden()
     window.show_banner("нет доступа к iCloud", "Открыть", "x", retry=True)
     assert not window.banner_retry.isHidden()
+
+
+def test_ai_check_button_runs_in_background(window, monkeypatch):
+    """Регресс: «Проверить» в Настройки → ИИ ждал ответ модели в UI-потоке — окно замирало на время запроса."""
+    import threading
+    import ai as AI
+    ui_thread = threading.get_ident()
+    seen = {}
+
+    def fake_check(*a, **k):
+        seen["thread"] = threading.get_ident()
+        return {"verdict": "good", "problems": [], "model": "m", "seconds": 0.1, "at": "2026-09-24T10:00:00"}
+    monkeypatch.setattr(AI, "check_model", fake_check)
+    window.open_settings()
+    dlg = window.settings_win
+    monkeypatch.setattr(dlg, "_ai_key", lambda: "k")
+    dlg._ai_test()
+    assert dlg._check_worker.wait(5000)
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+    assert seen["thread"] != ui_thread and "подходит" in dlg.lbl_ai_test.text()
+    dlg.close()

@@ -428,8 +428,90 @@ def summarize(provider: str, key: str, model: str, news_items, positions, proxy:
 
 
 def ping(provider: str, key: str, model: str, proxy: str = "", base_url: str = "") -> str:
-    """Короткий запрос для кнопки «Проверить». Возвращает текст ответа модели. Тратит один запрос из лимита."""
+    """Короткий запрос «ответь ОК». Возвращает текст ответа модели. Тратит один запрос из лимита."""
     return _chat(provider, key, model, "Отвечай одним словом.", "Ответь одним словом: ОК", proxy, base_url, max_tokens=20)
+
+
+# ---------------------------------------------------------------------------
+# Проверка пригодности модели (кнопка «Проверить» в Настройки → ИИ): один запрос вместо эвристики ★.
+# Сводки требуют того же, что проверяет тест: строгий JSON по схеме, русский текст, внимание к условию.
+# ---------------------------------------------------------------------------
+
+CHECK_SYSTEM = "Ты отвечаешь только валидным JSON без пояснений и без markdown."
+CHECK_USER = ('Верни JSON строго такого вида: {"sum": <число: 17 плюс 25>, "city": "<столица России, по-русски>", '
+              '"items": [<ровно три коротких слова по-русски, противоположных по смыслу слову «рост»>], '
+              '"sentiment": "<одно из: positive, neutral, negative — тональность фразы «прибыль упала вдвое»>"}')
+CHECKS_FILE = "ai_model_checks.json"
+_CYR = re.compile(r"[а-яё]", re.I)
+
+
+def evaluate_check(text: str) -> dict:
+    """Разбор ответа на CHECK_USER. Отдельно от сети — тестируется без запросов."""
+    res = {"json": False, "schema": False, "russian": False, "correct": False, "problems": []}
+    try:
+        data = _extract_json(text)
+        res["json"] = isinstance(data, dict)
+    except Exception:  # noqa: BLE001
+        res["problems"].append("ответ не разбирается как JSON — сводки с этой моделью будут падать")
+        return {**res, "verdict": "bad"}
+    if text.strip()[:1] != "{":
+        res["problems"].append("JSON обёрнут в текст или ```-блок (терпимо: приложение его вырезает)")
+    items = data.get("items")
+    res["schema"] = (set(data) >= {"sum", "city", "items", "sentiment"} and isinstance(items, list) and len(items) == 3)
+    if not res["schema"]:
+        res["problems"].append("не соблюдена схема (поля или «ровно три» элемента)")
+    words = [str(data.get("city", ""))] + [str(i) for i in (items or [])]
+    res["russian"] = bool(words) and all(_CYR.search(w) for w in words if w)
+    if not res["russian"]:
+        res["problems"].append("текст не по-русски")
+    try:
+        right_sum = float(data.get("sum")) == 42
+    except (TypeError, ValueError):
+        right_sum = False
+    res["correct"] = right_sum and "моск" in str(data.get("city", "")).lower() and data.get("sentiment") == "negative"
+    if not res["correct"]:
+        res["problems"].append("ошибки в простых вопросах (сумма, столица или тональность)")
+    ok = res["json"] and res["schema"] and res["russian"]
+    res["verdict"] = "good" if ok and res["correct"] else ("partial" if res["json"] else "bad")
+    return res
+
+
+def check_model(provider: str, key: str, model: str, proxy: str = "", base_url: str = "",
+                cache_dir: Path | None = None) -> dict:
+    """Один запрос: годится ли модель для сводок. Результат сохраняется по id модели (cache/ai_model_checks.json)."""
+    model = model or default_model(provider)
+    t0 = datetime.now()
+    text = _chat(provider, key, model, CHECK_SYSTEM, CHECK_USER, proxy, base_url, max_tokens=200)
+    res = {**evaluate_check(text), "model": model, "provider": provider, "at": datetime.now().isoformat(timespec="seconds"),
+           "seconds": round((datetime.now() - t0).total_seconds(), 1), "answer": text.strip()[:300]}
+    if cache_dir is not None:
+        f = cache_dir / CHECKS_FILE
+        try:
+            data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+        except Exception:  # noqa: BLE001
+            data = {}
+        data[f"{provider}:{model}"] = res
+        try:
+            f.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        except OSError as e:
+            log.warning("результат проверки модели не сохранён: %s", e)
+    return res
+
+
+def last_check(provider: str, model: str, cache_dir: Path | None) -> dict | None:
+    if cache_dir is None:
+        return None
+    try:
+        return json.loads((cache_dir / CHECKS_FILE).read_text(encoding="utf-8")).get(f"{provider}:{model or default_model(provider)}")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def describe_check(r: dict) -> str:
+    mark = {"good": "✓ подходит для сводок", "partial": "⚠ работает с оговорками", "bad": "✗ не подходит"}[r["verdict"]]
+    when = r.get("at", "")[:16].replace("T", " ")
+    tail = ("; " + "; ".join(r["problems"])) if r.get("problems") else ""
+    return f"{mark} — {r.get('model', '')}, {r.get('seconds', '?')} с, проверено {when}{tail}"
 
 
 # ---------------------------------------------------------------------------

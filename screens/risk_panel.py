@@ -44,8 +44,7 @@ class RiskMixin:
             f"максимальная просадка сегодняшнего состава <b>{r.max_drawdown:.1f}%</b> · эффективное число бумаг "
             f"<b>{r.effective_n:.1f}</b> · диверсификация гасит риск "
             + ("<b>полностью</b>. " if r.diversification == float("inf") else f"в <b>{r.diversification:.2f}×</b>. ")
-            + 
-            "<span style='color:gray'>Это описание прошлого года, не прогноз.</span>"
+            + "<span style='color:gray'>Это описание прошлого года, не прогноз.</span>"
             + (f"<br><span style='color:gray'>Без истории цен, в расчёт не вошли: {', '.join(r.missing)}.</span>"
                if r.missing else ""))
         self._fill(self.tbl_risk, [([name, t, f"{wt:.1f}", f"{vol:.1f}", f"{c:.1f}"], None)

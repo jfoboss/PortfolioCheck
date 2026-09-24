@@ -13,6 +13,7 @@ ai.py — ИИ-сводка по новостям: тональность по �
 from __future__ import annotations
 
 import json
+import logging
 import re
 import ssl
 import urllib.error
@@ -20,6 +21,8 @@ import urllib.request
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger("portfolio.ai")
 
 PROVIDERS = {
     # по умолчанию — бесплатная модель: ИИ-сводки работают сразу после создания ключа, баланс не тратится
@@ -280,8 +283,36 @@ class RateLimited(RuntimeError):
         super().__init__(text); self.kind = kind; self.reset = reset
 
 
-# После дневного лимита бесплатных моделей не отправляем запросы до сброса — иначе каждый вызов впустую жжёт время
+# После дневного лимита бесплатных моделей не отправляем запросы до сброса — иначе каждый вызов впустую жжёт время.
+# Хранится и на диске (cache/ai_rate_block.json рядом с каталогом): иначе после перезапуска приложение ещё раз
+# упиралось в лимит, прежде чем узнать о нём.
 RATE_BLOCK_UNTIL: datetime | None = None
+RATE_BLOCK_FILE = "ai_rate_block.json"
+
+
+def set_rate_block(until: datetime) -> None:
+    global RATE_BLOCK_UNTIL
+    RATE_BLOCK_UNTIL = until
+    if CATALOG_DIR is None:
+        return
+    try:
+        (CATALOG_DIR / RATE_BLOCK_FILE).write_text(json.dumps({"until": until.isoformat()}), encoding="utf-8")
+    except OSError as e:
+        log.warning("не удалось сохранить блокировку лимита: %s", e)
+
+
+def load_rate_block() -> datetime | None:
+    """При старте: восстановить блокировку из файла, если сброс ещё не наступил. Возвращает её или None."""
+    global RATE_BLOCK_UNTIL
+    if CATALOG_DIR is None:
+        return None
+    try:
+        until = datetime.fromisoformat(json.loads((CATALOG_DIR / RATE_BLOCK_FILE).read_text(encoding="utf-8"))["until"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if until > datetime.now() and (RATE_BLOCK_UNTIL is None or until > RATE_BLOCK_UNTIL):
+        RATE_BLOCK_UNTIL = until
+    return RATE_BLOCK_UNTIL if RATE_BLOCK_UNTIL and RATE_BLOCK_UNTIL > datetime.now() else None
 
 
 def _describe_429(e, body: dict) -> RateLimited:
@@ -341,8 +372,7 @@ def _post(url: str, headers: dict, body: dict, proxy: str = "", timeout: int = 1
         if e.code == 429:
             rl = _describe_429(e, body)
             if rl.kind == "daily":
-                global RATE_BLOCK_UNTIL
-                RATE_BLOCK_UNTIL = rl.reset or (datetime.now() + __import__("datetime").timedelta(hours=6))
+                set_rate_block(rl.reset or (datetime.now() + __import__("datetime").timedelta(hours=6)))
             raise rl from e
         detail = ""
         try:

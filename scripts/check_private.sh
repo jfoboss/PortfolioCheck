@@ -36,4 +36,26 @@ PY
     if [ -n "$hits" ]; then echo "⚠ из твоего конфига найдено в исходниках: «$pat»"; echo "$hits" | head -5; echo; found=1; fi
   done < /tmp/pc_private_patterns.txt
 fi
+# Картинки: содержимое скрипт не проверяет (на скриншоте могут быть суммы, тикеры, id счёта). Просмотренные
+# человеком фиксируются по sha256 в scripts/images_reviewed.txt (`scripts/check_private.sh --approve-images`);
+# предупреждение — только о новых и изменённых. Код выхода картинки не меняют: это напоминание, не запрет.
+REVIEWED="scripts/images_reviewed.txt"
+IMAGES=$(echo "$FILES" | grep -i -E '\.(png|jpe?g|gif|webp|heic|tiff?|bmp|pdf)$' || true)
+sha() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+if [ "${1:-}" = "--approve-images" ]; then
+  : > "$REVIEWED"
+  for f in $IMAGES; do [ -f "$f" ] && echo "$(sha "$f")  $f" >> "$REVIEWED"; done
+  echo "✓ отмечено как просмотренные: $(grep -c . "$REVIEWED" || true) картинок ($REVIEWED)"
+  exit 0
+fi
+unreviewed=""
+for f in $IMAGES; do
+  [ -f "$f" ] || continue
+  grep -q "^$(sha "$f")  " "$REVIEWED" 2>/dev/null || unreviewed="$unreviewed\n  $f"
+done
+if [ -n "$unreviewed" ]; then
+  echo -e "⚠ картинки не проверяются автоматически — посмотри глазами (суммы, тикеры, id счёта):$unreviewed"
+  echo "  Просмотрел и всё в порядке → scripts/check_private.sh --approve-images"; echo
+fi
+
 if [ $found -eq 0 ]; then echo "✓ личных данных в исходниках не найдено"; else echo "Исправь найденное перед публикацией."; exit 1; fi

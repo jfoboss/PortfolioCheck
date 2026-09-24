@@ -16,9 +16,15 @@
 
 ## Осмотр интерфейса без macOS
 
+`app.py --demo` (или `demo.setup()` в коде) — вымышленный портфель во временной папке, без токена и сети.
+Снимок окна — как в `tests/test_demo.py` (`DEMO_SCREENSHOT=/путь/shot.png pytest tests/test_demo.py`):
+
 ```python
 w = MainWindow(cfg_path); w.show(); w.grab().save("/tmp/screen.png")
 ```
+
+Скриншоты для README — только из демо; реальный портфель в репозиторий не попадает. Новые и изменённые картинки
+`check_private.sh` перечисляет, пока их не отметят просмотренными (`--approve-images`).
 
 ## Ручная проверка на macOS (перед релизом)
 

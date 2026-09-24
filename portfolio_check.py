@@ -385,25 +385,6 @@ def sector_label(code: str) -> str:
     return SECTOR_LABELS.get((code or "").lower(), code or "Не указана")
 
 
-# Классы, куда реально идут новые деньги — по ним и считается «доходность новых денег».
-BUY_CLASSES = ("equity_core", "real_estate_wh", "real_estate_other")
-
-
-def buy_side_yield(positions: list[Position], cfg: dict, fx: dict[str, Decimal] | None = None) -> tuple[float | None, int, Decimal]:
-    """Дивдоходность той части портфеля, которую пополняешь (ядро + ЗПИФ): (%, число позиций, их стоимость).
-    Классы берутся из правила «кандидаты на добор», если оно задано, иначе — BUY_CLASSES."""
-    classes = tuple(cfg.get("rules", {}).get("buy_candidates_classes") or ()) or BUY_CLASSES
-    classes = tuple(c for c in classes if c not in ("gold", "cash", "foreign", "ballast", "unclassified"))
-    fx = fx or {}
-    value = sum((p.value_rub for p in positions if p.cls in classes), Decimal(0))
-    income = sum((p.div_12m * p.quantity * fx.get(p.currency, Decimal(1))
-                  for p in positions if p.cls in classes and p.div_12m > 0), Decimal(0))
-    n = sum(1 for p in positions if p.cls in classes and p.value_rub > 0)
-    if value <= 0 or income <= 0:
-        return None, n, value
-    return float(income / value * 100), n, value
-
-
 def class_yields(positions: list[Position], fx: dict[str, Decimal] | None = None) -> dict[str, tuple[float, Decimal]]:
     """Текущая дивдоходность по классам: класс → (%, стоимость класса). Классы без выплат дают 0%."""
     fx = fx or {}

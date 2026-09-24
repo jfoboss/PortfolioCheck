@@ -57,7 +57,6 @@ TINT_BAD = QColor(255, 69, 58, 60)      # системный красный
 MASK, mask_text = pc.MASK, pc.mask_text
 
 SUPPORT_DIR = paths.LOCAL_DIR          # локальное: storage.json (указатель на папку данных)
-DATA_DIR = paths.data_dir()            # данные: config.yaml, ca-bundle.pem, snapshots/ — iCloud или локально
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +395,7 @@ class MainWindow(QMainWindow):
         self.auto_timer = QTimer(self)
         self.auto_timer.timeout.connect(lambda: self.refresh(manual=False))
 
-        self.setWindowTitle("Портфель — проверка правил")
+        self.setWindowTitle("Портфель — проверка правил" + (" — ДЕМО" if paths.DEMO_DIR is not None else ""))
         scr = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
         if scr is not None:
             self.resize(min(1400, scr.width() - 40), min(900, scr.height() - 60))
@@ -419,6 +418,7 @@ class MainWindow(QMainWindow):
                 "(или перезапустить приложение).",
                 "Открыть настройки доступа", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
         AI.CATALOG_DIR = paths.data_dir() / "cache"   # модель по умолчанию для OpenRouter — из живого каталога
+        AI.load_rate_block()                           # дневной лимит, пойманный до перезапуска, ещё действует
         self.restore_layout()                      # размер окна, положение разделителей, активный экран
         if self.needs_setup():
             QTimer.singleShot(400, lambda: self.run_wizard(first=True))
@@ -784,6 +784,8 @@ class MainWindow(QMainWindow):
         return out
 
     def save_layout(self) -> None:
+        if paths.DEMO_DIR is not None:             # демо не меняет размеры окна настоящего профиля
+            return
         s = self._qsettings()
         s.setValue("geometry", self.saveGeometry())
         s.setValue("window_state", self.saveState())
@@ -2049,9 +2051,18 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default=str(DATA_DIR / "config.yaml"))
+    ap.add_argument("--config", help="путь к config.yaml (по умолчанию — в папке данных)")
     ap.add_argument("--snapshot", help="открыть JSON-снапшот вместо загрузки из API")
+    ap.add_argument("--demo", action="store_true",
+                    help="вымышленный портфель без токена и сети; данные во временной папке, настоящий профиль не трогается")
     args = ap.parse_args()
+    if args.demo:
+        import demo
+        if args.config:
+            ap.error("--demo и --config несовместимы: демо всегда работает на своём временном конфиге")
+        args.config = str(demo.setup())            # до первого обращения к папке данных и Keychain
+    elif not args.config:
+        args.config = str(paths.data_dir() / "config.yaml")
 
     DIAG.setup_logging(paths.data_dir())      # лог с самого старта, до создания окна
     app = QApplication(sys.argv)
@@ -2062,6 +2073,10 @@ def main() -> None:
     ensure_config(Path(args.config))
     w = MainWindow(args.config)
     app.aboutToQuit.connect(lambda: w.close())
+    if args.demo:
+        w.show_banner("<b>Демо-режим:</b> вымышленный портфель, без токена и сети. Изменения живут до выхода "
+                      "и удаляются вместе с временной папкой.")
+        app.aboutToQuit.connect(demo.cleanup)
     if args.snapshot:
         w.positions = pc.load_snapshot(args.snapshot)
         w.status.setText(f"Снапшот: {Path(args.snapshot).name}")

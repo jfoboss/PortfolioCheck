@@ -101,3 +101,28 @@ def test_cache_structural_change_breaks_interval(tmp_path):
     assert c.get("news", "fp2", 6, False, "subjB")[0] is None            # новый состав — запрос
     c.data["news"].pop("structural")                                     # кэш старой версии без поля
     assert c.get("news", "fp2", 6, False, "subjA")[0] is None
+
+
+def test_daily_block_survives_restart(catalog, monkeypatch):
+    """Регресс: блокировка после дневного лимита жила только в памяти — после перезапуска приложение ещё раз
+    упиралось в лимит."""
+    from datetime import timedelta
+    calls = []
+
+    def fail(req, timeout=0):
+        calls.append(1)
+        raise _429({"error": {"message": "free-models-per-day", "metadata": {"headers": {"X-RateLimit-Limit": "50"}}}})
+    monkeypatch.setattr(urllib.request, "build_opener", _opener(fail))
+    with pytest.raises(ai.RateLimited):
+        ai.ping("openrouter", "k", "")
+    monkeypatch.setattr(ai, "RATE_BLOCK_UNTIL", None)                     # «перезапуск»
+    assert ai.load_rate_block() is not None
+    with pytest.raises(ai.RateLimited) as e:
+        ai.ping("openrouter", "k", "")
+    assert e.value.kind == "daily" and len(calls) == 1                   # в сеть второй раз не пошли
+    # сброс наступил — старая запись игнорируется
+    (catalog / ai.RATE_BLOCK_FILE).write_text(json.dumps({"until": (datetime.now() - timedelta(minutes=1)).isoformat()}))
+    monkeypatch.setattr(ai, "RATE_BLOCK_UNTIL", None)
+    assert ai.load_rate_block() is None and ai.RATE_BLOCK_UNTIL is None
+    (catalog / ai.RATE_BLOCK_FILE).write_text("мусор")
+    assert ai.load_rate_block() is None

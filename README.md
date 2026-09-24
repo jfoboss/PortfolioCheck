@@ -103,7 +103,7 @@ id счёта и личных сумм.
 50 в сутки, после покупки кредитов от $10 — 1000 в сутки. Смена модели при исчерпанном дневном лимите не помогает.
 Программа экономит запросы: одно обновление тратит 2 (сводка новостей и все экраны одним запросом), ответы
 кэшируются. На 429 она разбирает ответ и пишет, что именно случилось: дневной лимит аккаунта (с временем сброса —
-до него запросы к бесплатным моделям не отправляются), лимит в минуту или перегрузка провайдера модели (тогда
+до него запросы к бесплатным моделям не отправляются, в том числе после перезапуска программы), лимит в минуту или перегрузка провайдера модели (тогда
 OpenRouter сам пробует запасные бесплатные модели). Статус ключа — куплены ли кредиты — показан в настройках.
 Подписка Claude Pro/Max доступ к API не включает — это отдельный баланс. Без ключа ИИ-панели просто скрыты.
 
@@ -123,6 +123,7 @@ Python 3.12, PySide6 (Qt), [tinkoff-investments](https://github.com/RussianInves
 | `history.py`, `news.py`, `screener.py`, `macro.py`, `ai.py` | свечи, RSS, скринер, данные ЦБ, ИИ |
 | `settings_dialog.py`, `diagnostics.py`, `paths.py`, `secrets_store.py` | настройки, диагностика, хранилище, Keychain |
 | `config_migrate.py` | версия конфига и миграции между версиями |
+| `demo.py` | режим `--demo`: вымышленный портфель во временной папке |
 | `build_mac.sh`, `bootstrap_mac.sh` | сборка .app/.dmg и подготовка окружения |
 
 ## Ограничения
@@ -137,11 +138,12 @@ Python 3.12, PySide6 (Qt), [tinkoff-investments](https://github.com/RussianInves
 ```bash
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest          # тесты: offscreen, без сети, на демо-данных
-scripts/check_private.sh             # перед push: нет ли личных данных в исходниках
+scripts/check_private.sh             # перед push: нет ли личных данных в исходниках (и какие картинки не просмотрены)
+.venv/bin/python app.py --demo       # вымышленный портфель без токена; настоящий профиль не трогается
 ```
 
 Документация для разработчика и агента (Claude Code): `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`,
-`docs/LESSONS.md`, `docs/BACKLOG.md`, `docs/TESTING.md`, правила по областям кода — `.claude/rules/`.
+`docs/LESSONS.md`, `docs/BACKLOG.md`, `docs/TESTING.md`, `docs/CROSS_PLATFORM.md`, `docs/TERMINAL_IDEAS.md`, правила по областям кода — `.claude/rules/`.
 
 ## Лицензия
 

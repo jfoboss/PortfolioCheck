@@ -20,6 +20,7 @@ import paths
 
 log = logging.getLogger("portfolio.secrets")
 _cache: dict[tuple[str, str], str | None] = {}
+DISABLED = False   # режим --demo: Keychain и файл не трогаем, введённое живёт только в памяти до выхода
 SECURITY = shutil.which("security") or "/usr/bin/security"
 
 
@@ -63,6 +64,8 @@ def _kc_delete(service: str, user: str) -> None:
 def get(service: str, user: str) -> str | None:
     """Секрет из Keychain (один запрос за сессию), иначе из файла."""
     key = (service, user)
+    if DISABLED:
+        return _cache.get(key)
     if key in _cache:
         return _cache[key]
     val = _kc_get(service, user)
@@ -75,7 +78,10 @@ def get(service: str, user: str) -> str | None:
 
 
 def set(service: str, user: str, value: str) -> str:
-    """Возвращает, куда сохранили: 'keychain' | 'file'."""
+    """Возвращает, куда сохранили: 'keychain' | 'file' | 'session' (демо)."""
+    if DISABLED:
+        _cache[(service, user)] = value
+        return "session"
     if _kc_set(service, user, value):
         f = _file(service, user)
         if f.exists():
@@ -90,6 +96,9 @@ def set(service: str, user: str, value: str) -> str:
 
 
 def delete(service: str, user: str) -> None:
+    if DISABLED:
+        _cache[(service, user)] = None
+        return
     _kc_delete(service, user)
     f = _file(service, user)
     if f.exists():
@@ -101,4 +110,6 @@ def where(service: str, user: str) -> str:
     """'keychain' | 'file' | '' — без лишнего запроса к Keychain."""
     if get(service, user) is None:
         return ""
+    if DISABLED:
+        return "session"
     return "file" if _file(service, user).exists() else "keychain"

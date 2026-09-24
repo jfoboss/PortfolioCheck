@@ -26,6 +26,7 @@ def icloud_available() -> bool:
     return ICLOUD_ROOT.is_dir()
 
 
+DEMO_DIR: Path | None = None   # режим --demo (demo.py): временная папка вместо настоящей, указатель не трогаем
 fallback_reason: str = ""    # заполняется, если выбранная папка недоступна и пришлось уйти на локальную
 
 
@@ -50,6 +51,9 @@ def data_dir() -> Path:
     """Текущая папка данных. Создаёт её и при первом запуске переносит локальные файлы, если они есть.
     Если выбранная папка недоступна (нет разрешения macOS на iCloud Drive) — тихо работает локально."""
     global fallback_reason
+    if DEMO_DIR is not None:
+        (DEMO_DIR / "snapshots").mkdir(parents=True, exist_ok=True)
+        return DEMO_DIR
     d = None
     if POINTER.exists():
         try:
@@ -73,6 +77,8 @@ def data_dir() -> Path:
 
 def set_data_dir(new_dir: Path, move_files: bool = True) -> Path:
     """Сменить папку данных; при move_files перенести туда текущие файлы (если в новой их ещё нет)."""
+    if DEMO_DIR is not None:
+        raise RuntimeError("демо-режим: папка данных временная и не меняется")
     old = data_dir()
     new_dir = new_dir.expanduser()
     new_dir.mkdir(parents=True, exist_ok=True)

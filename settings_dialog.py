@@ -453,6 +453,9 @@ class SettingsDialog(QDialog):
         self.rb_local = QRadioButton("Только на этом Mac")
         self.rb_custom = QRadioButton("Другая папка (Dropbox, MEGAsync, …)")
         self.rb_icloud.setEnabled(paths.icloud_available())
+        if paths.DEMO_DIR is not None:                 # демо: временная папка, переключать некуда
+            for rb in (self.rb_icloud, self.rb_local, self.rb_custom):
+                rb.setEnabled(False)
         {"icloud": self.rb_icloud, "local": self.rb_local, "custom": self.rb_custom}[mode].setChecked(True)
         self.lbl_storage = _note(str(cur), gray=True)
         grp = QButtonGroup(self)
@@ -1039,7 +1042,7 @@ class SettingsDialog(QDialog):
 
     def _refresh_token_label(self) -> None:
         where = SEC.where(KEYRING_SERVICE, KEYRING_USER)
-        self.lbl_token.setText({"keychain": "Сохранён в Keychain ✓", "file": "Сохранён в защищённом файле (Keychain недоступен) ✓"}.get(where, "Не задан"))
+        self.lbl_token.setText({"session": "Только до выхода (демо-режим) ✓", "keychain": "Сохранён в Keychain ✓", "file": "Сохранён в защищённом файле (Keychain недоступен) ✓"}.get(where, "Не задан"))
 
     def _set_token(self) -> None:
         tok, ok = QInputDialog.getText(self, "Токен T-Invest API", "Read-only токен (начинается с «t.»):", QLineEdit.Password)

@@ -20,6 +20,7 @@ app.py  ── главное окно, 4 экрана + «О программе
   macro.py            ── инфляция и ставка с сайта ЦБ РФ
   paths.py            ── где лежат данные (локально / iCloud Drive), миграция
   config_migrate.py   ── config_version и явные миграции формата конфига
+  demo.py             ── режим --demo: временная папка данных, демо-снапшот, секреты только в памяти
   secrets_store.py    ── Keychain через /usr/bin/security
 ```
 
@@ -52,6 +53,7 @@ app.py  ── главное окно, 4 экрана + «О программе
 | `cache/screener.json` | результат скринера (`source: tinvest2`) | `screener.screen` |
 | `cache/ai_responses.json` | кэш ответов ИИ с отпечатками | `ai.ResponseCache` |
 | `cache/ai_summary.json`, `cache/exec_<экран>.json` | последние сводки для мгновенного показа | `ai.save_*` |
+| `cache/ai_rate_block.json` | до какого времени не слать запросы к `:free` (дневной лимит) | `ai.set_rate_block` |
 | `cache/openrouter_models.json` | каталог моделей OpenRouter (сутки) | `ai.fetch_openrouter_models` |
 | `logs/` | лог приложения | `diagnostics.setup_logging` |
 | `ca-bundle.pem` | корни для gRPC (grpcio + Минцифры) | `make_ca_bundle.sh`, настройки |

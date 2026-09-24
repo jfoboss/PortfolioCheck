@@ -1468,9 +1468,9 @@ class MainWindow(QMainWindow):
         kw = NEWS.build_keywords(ideas, (self.cfg.get("news", {}) or {}).get("aliases") or {})
         notes = {i["ticker"]: i.get("note", "") for i in (s.items if s else [])}
         for idea in ideas:
-            words = [w.lower() for w in kw.get(idea.ticker, [])]
+            words = kw.get(idea.ticker, [])
             idea.news_count = sum(1 for it in getattr(self, "news_items", [])
-                                  if any(w in f"{it.title} {it.summary}".lower() for w in words))
+                                  if any(NEWS.mentions(f"{it.title} {it.summary}".lower(), w) for w in words))
             idea.news_sentiment = sent.get(idea.ticker, "")
             idea.news_note = notes.get(idea.ticker, "")
 

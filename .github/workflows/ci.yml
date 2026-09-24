@@ -61,3 +61,25 @@ jobs:
         with:
           name: PortfolioCheck-windows
           path: dist/PortfolioCheck-windows.zip
+
+  build-macos:
+    needs: tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Сборка .app и .dmg (как в релизе)
+        run: bash ./build_mac.sh
+      - name: Запуск собранного .app в демо-режиме (дымовой тест)
+        run: |
+          QT_QPA_PLATFORM=offscreen dist/PortfolioCheck.app/Contents/MacOS/PortfolioCheck --demo &
+          PID=$!
+          sleep 20
+          kill -0 $PID || { echo "приложение завершилось раньше времени"; exit 1; }
+          kill $PID
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PortfolioCheck-macos
+          path: dist/*.dmg

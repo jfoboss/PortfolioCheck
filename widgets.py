@@ -100,3 +100,35 @@ class SortItem(QTableWidgetItem):
         if isinstance(a, float) and isinstance(b, float):
             return a < b
         return str(a) < str(b)
+
+
+def scroll_wrap(w, base_background: bool = True):
+    """Колонка графиков в прокрутке: на низком экране — полоса прокрутки, а не наложение подписей (charts.py
+    держит минимальную высоту по содержимому). Горизонтально не прокручиваем — графики сжимаются по ширине."""
+    from PySide6.QtGui import QPalette
+    from PySide6.QtWidgets import QFrame, QScrollArea
+    sa = QScrollArea(); sa.setWidget(w); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.NoFrame)
+    sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    if base_background:
+        sa.setBackgroundRole(QPalette.Base); sa.viewport().setBackgroundRole(QPalette.Base)
+    sa.setMinimumHeight(0)
+    # по горизонтали не прокручиваем — значит, и уже содержимого быть нельзя (иначе поля формы обрезаются)
+    sa.setMinimumWidth(w.minimumSizeHint().width() + sa.verticalScrollBar().sizeHint().width() + 2)
+    return sa
+
+
+def icon_column(table, col: int, legend: dict) -> None:
+    """Колонка статусов значками: legend — {значок: (подсказка, цвет)}. Ячейка по центру, слово — в подсказке
+    (экономит ширину: «ожидается*» → «≈»). Значки без эмодзи — одинаково видны на macOS, Windows и Linux."""
+    for r in range(table.rowCount()):
+        it = table.item(r, col)
+        if it is None:
+            continue
+        sym = it.text().split(" ", 1)[0]
+        if sym in legend:
+            tip, color = legend[sym]
+            it.setToolTip(tip + ("" if " " not in it.text() else ": " + it.text().split(" ", 1)[1]))
+            it.setForeground(QColor(color)); it.setTextAlignment(Qt.AlignCenter)
+    hdr = table.horizontalHeaderItem(col)
+    if hdr is not None:
+        hdr.setToolTip(" · ".join(f"{s} — {t}" for s, (t, _) in legend.items()))

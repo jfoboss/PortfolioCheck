@@ -71,7 +71,7 @@ class SecurityCard(QDialog):
         self.lbl_head = QLabel(); self.lbl_head.setTextFormat(Qt.RichText); self.lbl_head.setWordWrap(True)
         self.chart = LineChart("Цена, год", "", zero_based=False)
         self.info = QTextBrowser(); self.info.setOpenExternalLinks(True)
-        self.tbl_pay = win._table(["Отсечка", "Последний день покупки", "Выплата", "На бумагу", "Сумма, ₽", "Статус"])
+        self.tbl_pay = win._table(["Отсечка", "Посл. день покупки", "Выплата", "На бумагу", "Сумма, ₽", "Ст."])
         self.tbl_news = win._table(["Новость", "Когда", "Источник"])
         for t in (self.tbl_pay, self.tbl_news):
             t.setSortingEnabled(False)               # порядок задан: выплаты — от новых, новости — свежие сверху
@@ -158,10 +158,12 @@ class SecurityCard(QDialog):
         html += self._consensus_html(d)
         self.info.setHtml("".join(html) or "<p style='color:gray'>Данных о бумаге пока нет.</p>")
 
-        STATUS = {"declared": "объявлена", "expected": "ожидается*", "paid": "была"}
+        from screens.payouts import STATUS, STATUS_LEGEND
+        from widgets import icon_column
         rows = [([x.record_date, x.last_buy_date or "—", x.payment_date or "—", f"{x.per_share:,.2f}",
                   money(x.amount_rub), STATUS[x.status]], None) for x in reversed(d["payouts"])]
         self.win._fill(self.tbl_pay, rows)
+        icon_column(self.tbl_pay, 5, STATUS_LEGEND)
         self.win._fill(self.tbl_news, [([it.title, it.published.strftime("%d.%m %H:%M") if it.published else "",
                                          it.source], None) for it in d["news"][:50]])
 

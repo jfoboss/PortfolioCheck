@@ -17,6 +17,7 @@ import scenarios as SC
 from charts import DivergingBarChart
 from diagnostics import log
 from ui_common import MASK
+from widgets import scroll_wrap
 from workers import FactorsWorker
 
 
@@ -42,9 +43,14 @@ class ScenariosMixin:
                                           empty_text="задай сценарий")
         self.tbl_sc = self._table(["Бумага", "Тикер", "Изменение, ₽", "Изменение, %", "β к индексу", "β к доллару", "R²"])
         self.tbl_sc.sortByColumn(2, Qt.AscendingOrder)       # сначала самые большие потери
-        body = QHBoxLayout(); body.addWidget(self.chart_sc, 2); body.addWidget(self.tbl_sc, 3)
+        body = QHBoxLayout(); body.addWidget(scroll_wrap(self._doc_panel(self._wrap_one(self.chart_sc))), 2); body.addWidget(self.tbl_sc, 3)
         lay.addWidget(self.lbl_sc); lay.addLayout(body, 1)
         self._set_scenario(*SC.PRESETS[0][1:])
+        return w
+
+    @staticmethod
+    def _wrap_one(chart) -> QWidget:
+        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(chart, 1)
         return w
 
     def _set_scenario(self, d_index: float, d_usd: float) -> None:

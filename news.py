@@ -134,28 +134,29 @@ HEADERS = {"User-Agent": UA_DESKTOP,
 
 
 def _fetch(url: str, ca_bundle: Path | None = None, timeout: int = 12) -> bytes:
-    """RSS берём с системными корнями (не с нашим бандлом для T-Invest — у сайтов другие УЦ).
-    При 403 повторяем с заголовками обычного браузера, при ошибке TLS — с менее строгим контекстом."""
-    def once(headers: dict, ctx=None) -> bytes:
+    """Сайты (RSS, ISS, ЦБ) — с корнями из системного хранилища ОС (tls.py), не с нашим бандлом для T-Invest.
+    При 403 повторяем с заголовками обычного браузера; при ошибке TLS, кроме непрошедшей проверки сертификата, —
+    с устаревшими шифрами (проверка сертификата остаётся: подмену сертификата не прощаем)."""
+    import tls
+
+    def once(headers: dict, ctx) -> bytes:
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
             return r.read()
 
     try:
-        return once(HEADERS)
+        return once(HEADERS, tls.system_context())
     except urllib.error.HTTPError as e:
         if e.code not in (403, 406, 429):
             raise
         h = {**HEADERS, "Referer": re.match(r"https?://[^/]+", url).group(0) + "/",
              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
-        return once(h)
-    except ssl.SSLError:
-        # часть сайтов с устаревшей настройкой TLS — для публичной ленты это приемлемо
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        ctx.set_ciphers("DEFAULT@SECLEVEL=1")
-        return once(HEADERS, ctx)
+        return once(h, tls.system_context())
+    except urllib.error.URLError as e:
+        # urlopen заворачивает ssl.SSLError в URLError — раньше здесь ловился голый SSLError, и повтор не срабатывал
+        if not isinstance(e.reason, ssl.SSLError) or isinstance(e.reason, ssl.SSLCertVerificationError):
+            raise
+        return once(HEADERS, tls.system_context(legacy=True))
 
 
 ATOM = "{http://www.w3.org/2005/Atom}"

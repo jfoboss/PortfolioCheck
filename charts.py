@@ -1,10 +1,18 @@
-"""charts.py — простые графики на QPainter: линейный и круговой. QtCharts в PySide6-Essentials нет."""
+"""charts.py — простые графики на QPainter: линейный и круговой. QtCharts в PySide6-Essentials нет.
+
+Правило раскладки: график не рисуется в меньшую высоту, чем нужно его содержимому, — после set_data он сам выставляет
+setMinimumHeight по числу строк / пунктов легенды (need_height). Где графиков несколько в колонке, контейнер
+оборачивается в прокрутку (ui_common.scroll_wrap): на экране ноутбука появляется полоса прокрутки, а не наложение
+подписей (было на MacBook 14″: бублики и подписи баров залезали друг на друга).
+"""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPainterPath, QBrush, QFontMetrics
 from PySide6.QtWidgets import QWidget
+
+ROW_MIN = 22          # минимальная высота строки в барах: текст 9 pt + сама полоска
 
 PALETTE = ["#534AB7", "#0F6E56", "#C0392B", "#D68910", "#1F77B4", "#8E44AD", "#16A085", "#7F8C8D",
            "#2C3E50", "#E67E22", "#27AE60", "#95A5A6"]
@@ -27,7 +35,7 @@ class LineChart(QWidget):
         self.hline: tuple[str, float] | None = None
         self.zero_based = zero_based          # False — ось Y начинается чуть ниже минимума (для истории стоимости)
         self.hide_values = False
-        self.setMinimumHeight(140)
+        self.setMinimumHeight(180)
 
     def set_data(self, x_labels, series, hline=None) -> None:
         """series: (имя, значения — None допустим как пропуск, цвет, пунктир)."""
@@ -38,12 +46,23 @@ class LineChart(QWidget):
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
         fg = self.palette().text().color(); grid = QColor(fg); grid.setAlpha(40)
         W, H = self.width(), self.height()
-        left, right, top, bottom = 96, 16, 34, 30
-        plot = QRectF(left, top, W - left - right, H - top - bottom)
         p.setPen(fg); p.setFont(QFont(self.font().family(), 12, QFont.Bold))
-        p.drawText(QRectF(0, 4, W, 24), Qt.AlignHCenter, self.title)
+        p.drawText(QRectF(0, 4, W, 24), Qt.AlignHCenter, QFontMetrics(p.font()).elidedText(self.title, Qt.ElideRight, int(W - 8)))
         if not self.series or not self.x_labels:
             return
+        # легенда — строкой под заголовком (раньше лежала поверх линий и налезала на них и на линию цели)
+        p.setFont(QFont(self.font().family(), 9)); fm = QFontMetrics(p.font())
+        lx, ly = 8.0, 30.0
+        for name, _, color, dashed in self.series:
+            w = 28 + fm.horizontalAdvance(name) + 16
+            if lx + w > W - 8 and lx > 8:
+                lx, ly = 8.0, ly + 16
+            p.setPen(QPen(QColor(color), 2.2, Qt.DashLine if dashed else Qt.SolidLine))
+            p.drawLine(QPointF(lx, ly + 7), QPointF(lx + 22, ly + 7))
+            p.setPen(fg); p.drawText(QRectF(lx + 28, ly, w - 28, 14), Qt.AlignLeft | Qt.AlignVCenter, name)
+            lx += w
+        left, right, top, bottom = 96, 16, ly + 22, 24
+        plot = QRectF(left, top, W - left - right, H - top - bottom)
         vals = [v for _, s, _, _ in self.series for v in s if v is not None] + ([self.hline[1]] if self.hline else [])
         if not vals:
             return
@@ -53,14 +72,15 @@ class LineChart(QWidget):
         n = len(self.x_labels)
         X = lambda i: plot.left() + plot.width() * i / max(n - 1, 1)
         Y = lambda v: plot.bottom() - plot.height() * (v - ymin) / span
-        p.setFont(QFont(self.font().family(), 9))
-        for k in range(5):
-            v = ymin + span * k / 4; yy = Y(v)
+        ticks = 4 if plot.height() >= 110 else 2
+        for k in range(ticks + 1):
+            v = ymin + span * k / ticks; yy = Y(v)
             p.setPen(QPen(grid, 1)); p.drawLine(QPointF(plot.left(), yy), QPointF(plot.right(), yy))
             p.setPen(fg); p.drawText(QRectF(0, yy - 8, left - 6, 16), Qt.AlignRight | Qt.AlignVCenter, "•••" if self.hide_values else fmt_money(v))
-        step = max(1, n // 10)
-        for i in range(0, n, step):
-            p.drawText(QRectF(X(i) - 30, plot.bottom() + 4, 60, 18), Qt.AlignHCenter, self.x_labels[i])
+        lw = max(fm.horizontalAdvance(str(x)) for x in self.x_labels) + 12      # подписи по оси X не наезжают
+        step = max(1, -(-n * lw // max(plot.width(), 1)))
+        for i in range(0, n, int(step)):
+            p.drawText(QRectF(X(i) - lw / 2, plot.bottom() + 4, lw, 16), Qt.AlignHCenter, self.x_labels[i])
         p.save(); p.translate(12, plot.center().y()); p.rotate(-90)
         p.drawText(QRectF(-100, -8, 200, 16), Qt.AlignCenter, self.y_label); p.restore()
         if self.hline:
@@ -84,12 +104,6 @@ class LineChart(QWidget):
             pts = [i for i, v in enumerate(s) if v is not None]
             if len(pts) == 1:
                 p.setBrush(QBrush(QColor(color))); p.drawEllipse(QPointF(X(pts[0]), Y(s[pts[0]])), 4, 4)
-        lx, ly = plot.left() + 6, top + 4
-        for name, s, color, dashed in self.series:
-            p.setPen(QPen(QColor(color), 2.2, Qt.DashLine if dashed else Qt.SolidLine))
-            p.drawLine(QPointF(lx, ly + 7), QPointF(lx + 22, ly + 7))
-            p.setPen(fg); p.drawText(QRectF(lx + 28, ly, W - lx - 40, 14), Qt.AlignLeft | Qt.AlignVCenter, name)
-            ly += 16
 
 
 class PieChart(QWidget):
@@ -108,14 +122,19 @@ class PieChart(QWidget):
             head, tail = items[: self.max_slices - 1], items[self.max_slices - 1:]
             items = head + [("Прочее", sum(v for _, v in tail))]
         self.items = items
+        self.setMinimumHeight(self.need_height())
         self.update()
+
+    def need_height(self) -> int:
+        """Заголовок + легенда целиком (или кольцо, если легенда короче)."""
+        return 40 + max(100, len(self.items) * 16 + 8)
 
     def paintEvent(self, _) -> None:
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
         fg = self.palette().text().color()
         W, H = self.width(), self.height()
         p.setPen(fg); p.setFont(QFont(self.font().family(), 12, QFont.Bold))
-        p.drawText(QRectF(0, 4, W, 24), Qt.AlignHCenter, self.title)
+        p.drawText(QRectF(0, 4, W, 24), Qt.AlignHCenter, QFontMetrics(p.font()).elidedText(self.title, Qt.ElideRight, int(W - 8)))
         total = sum(v for _, v in self.items)
         if not total:
             p.setFont(QFont(self.font().family(), 10)); p.drawText(QRectF(0, 0, W, H), Qt.AlignCenter, "нет данных"); return
@@ -141,17 +160,18 @@ class PieChart(QWidget):
             p.setBrush(QBrush(QColor(PALETTE[i % len(PALETTE)]))); p.setPen(Qt.NoPen)
             p.drawRoundedRect(QRectF(lx, ly + 3, 10, 10), 2, 2)
             p.setPen(fg)
-            label = f"{name}  {v / total * 100:.1f}%"
+            label = QFontMetrics(p.font()).elidedText(f"{name}  {v / total * 100:.1f}%", Qt.ElideMiddle, int(W - lx - 20))
             p.drawText(QRectF(lx + 16, ly, W - lx - 20, rowh), Qt.AlignLeft | Qt.AlignVCenter, label)
             ly += rowh
 
 
 class BarChart(QWidget):
-    """Горизонтальные сгруппированные бары: категории (строки) × серии (цвета). Значения — деньги."""
+    """Горизонтальные бары: категории (строки) × серии (цвета). Значения — деньги.
+    stacked=True — серии складываются в одну полосу (подпись — сумма): вдвое компактнее по высоте."""
 
-    def __init__(self, title: str, parent=None):
+    def __init__(self, title: str, parent=None, stacked: bool = False):
         super().__init__(parent)
-        self.title = title
+        self.title, self.stacked = title, stacked
         self.categories: list[str] = []
         self.series: list[tuple[str, list[float], str]] = []   # (имя, значения по категориям, цвет)
         self.hide_values = False
@@ -159,36 +179,58 @@ class BarChart(QWidget):
 
     def set_data(self, categories: list[str], series: list[tuple[str, list[float], str]]) -> None:
         self.categories, self.series = categories, series
-        self.setMinimumHeight(120)
+        self.setMinimumHeight(self.need_height())
         self.update()
+
+    def _group_min(self) -> float:
+        return ROW_MIN if self.stacked else max(ROW_MIN, 14 * len(self.series) + 8)
+
+    def need_height(self) -> int:
+        return int(52 + len(self.categories) * self._group_min() + 10)
 
     def paintEvent(self, _) -> None:
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
         fg = self.palette().text().color(); grid = QColor(fg); grid.setAlpha(40)
         W, H = self.width(), self.height()
         p.setPen(fg); p.setFont(QFont(self.font().family(), 12, QFont.Bold))
-        p.drawText(QRectF(0, 4, W, 24), Qt.AlignHCenter, self.title)
+        p.drawText(QRectF(0, 4, W, 24), Qt.AlignHCenter, QFontMetrics(p.font()).elidedText(self.title, Qt.ElideRight, int(W - 8)))
         if not self.categories or not self.series:
             p.setFont(QFont(self.font().family(), 10)); p.drawText(QRectF(0, 0, W, H), Qt.AlignCenter, "нет данных"); return
         left = min(260, int(W * 0.32)); right = 90; top = 52; bottom = 10
         plot = QRectF(left, top, W - left - right, H - top - bottom)
         vmax = max([v for _, vals, _ in self.series for v in vals] + [1.0])
         n, k = len(self.categories), len(self.series)
-        group_h = max(18.0, min(14 * k + 12, plot.height() / max(1, n)))
-        bar_h = max(4.0, (group_h - 8) / max(1, k))
-        p.setFont(QFont(self.font().family(), 9))
+        if self.stacked:
+            vmax = max([sum(vals[i] if i < len(vals) else 0.0 for _, vals, _ in self.series) for i in range(n)] + [1.0])
+        group_h = max(self._group_min(), min(14 * (1 if self.stacked else k) + 12, plot.height() / max(1, n)))
+        bar_h = group_h - 8 if self.stacked else max(4.0, (group_h - 8) / max(1, k))
+        p.setFont(QFont(self.font().family(), 9)); fm = QFontMetrics(p.font())
         # легенда
         lx = left
         for name, _, color in self.series:
             p.setBrush(QBrush(QColor(color))); p.setPen(Qt.NoPen)
             p.drawRoundedRect(QRectF(lx, 32, 10, 10), 2, 2)
             p.setPen(fg); p.drawText(QRectF(lx + 14, 30, 220, 14), Qt.AlignLeft | Qt.AlignVCenter, name)
-            lx += 14 + 8 * len(name) + 24
+            lx += 14 + fm.horizontalAdvance(name) + 16
         for i, cat in enumerate(self.categories):
             y0 = plot.top() + i * group_h
             p.setPen(fg)
-            label = QFontMetrics(p.font()).elidedText(cat, Qt.ElideRight, left - 16)
-            p.drawText(QRectF(4, y0, left - 12, group_h - 12), Qt.AlignRight | Qt.AlignVCenter, label)
+            label = fm.elidedText(cat, Qt.ElideRight, left - 16)
+            p.drawText(QRectF(4, y0, left - 12, group_h - 6), Qt.AlignRight | Qt.AlignVCenter, label)
+            if self.stacked:
+                x = plot.left(); tot = 0.0
+                for name, vals, color in self.series:
+                    v = vals[i] if i < len(vals) else 0.0
+                    w = plot.width() * v / vmax if v > 0 else 0.0
+                    p.setPen(Qt.NoPen); p.setBrush(QBrush(QColor(color)))
+                    if w:
+                        p.drawRoundedRect(QRectF(x, y0 + 2, max(w, 1), bar_h - 2), 3, 3)
+                    x += w; tot += max(v, 0.0)
+                p.setPen(fg)
+                p.drawText(QRectF(x + 6, y0, right + 40, bar_h + 2), Qt.AlignLeft | Qt.AlignVCenter,
+                           "•••" if self.hide_values else (fmt_money(tot) if tot > 0 else "—"))
+                p.setPen(QPen(grid, 1)); p.drawLine(QPointF(4, y0 + group_h - 3), QPointF(W - 4, y0 + group_h - 3))
+                continue
             for j, (name, vals, color) in enumerate(self.series):
                 v = vals[i] if i < len(vals) else 0.0
                 y = y0 + j * bar_h
@@ -212,8 +254,11 @@ class RangeBarChart(QWidget):
 
     def set_data(self, rows) -> None:
         self.rows = rows
-        self.setMinimumHeight(120)
+        self.setMinimumHeight(self.need_height())
         self.update()
+
+    def need_height(self) -> int:
+        return 40 + len(self.rows) * ROW_MIN + 8
 
     def paintEvent(self, _) -> None:
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
@@ -225,11 +270,12 @@ class RangeBarChart(QWidget):
             return
         left = min(240, int(W * 0.32)); right = 60; top = 40
         plot = QRectF(left, top, W - left - right, H - top - 8)
-        rowh = max(14.0, min(26.0, plot.height() / max(1, len(self.rows))))   # строки ужимаются под высоту
+        rowh = max(float(ROW_MIN), min(26.0, plot.height() / max(1, len(self.rows))))   # строки ужимаются, но не до наложения
         vmax = max([r[1] for r in self.rows] + [r[3] or 0 for r in self.rows] + [10.0]) * 1.1
         X = lambda v: plot.left() + plot.width() * v / vmax
         p.setFont(QFont(self.font().family(), 9))
-        for k in range(0, int(vmax) + 1, 10):
+        tick = 10 if plot.width() >= vmax / 10 * 34 else 20             # «0% 10% 20%…» не слипаются на узком
+        for k in range(0, int(vmax) + 1, tick):
             p.setPen(QPen(grid, 1)); p.drawLine(QPointF(X(k), plot.top()), QPointF(X(k), plot.bottom()))
             p.setPen(fg); p.drawText(QRectF(X(k) - 20, plot.top() - 14, 40, 12), Qt.AlignHCenter, f"{k}%")
         for i, (name, share, lo, hi) in enumerate(self.rows):
@@ -248,7 +294,7 @@ class RangeBarChart(QWidget):
             else:
                 color = QColor(fg); color.setAlpha(120)
             p.setPen(Qt.NoPen); p.setBrush(QBrush(color))
-            p.drawRoundedRect(QRectF(plot.left(), y + 8, max(X(share) - plot.left(), 1), rowh - 22), 2, 2)  # доля — тонкий бар
+            p.drawRoundedRect(QRectF(plot.left(), y + rowh * 0.3, max(X(share) - plot.left(), 1), max(rowh * 0.4 - 6, 3)), 2, 2)
             p.setPen(fg); p.drawText(QRectF(X(share) + 6, y, 60, rowh - 6), Qt.AlignLeft | Qt.AlignVCenter, f"{share:.1f}%")
 
 
@@ -266,8 +312,11 @@ class DivergingBarChart(QWidget):
 
     def set_data(self, rows) -> None:
         self.rows = rows
-        self.setMinimumHeight(120)
+        self.setMinimumHeight(self.need_height())
         self.update()
+
+    def need_height(self) -> int:
+        return 40 + len(self.rows) * ROW_MIN + 8
 
     def paintEvent(self, _) -> None:
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
@@ -279,7 +328,7 @@ class DivergingBarChart(QWidget):
             p.setFont(QFont(self.font().family(), 10)); p.drawText(QRectF(0, 0, W, H), Qt.AlignCenter, self.empty_text); return
         left = min(200, int(W * 0.28)); right = 16; top = 40
         plot = QRectF(left, top, W - left - right, H - top - 8)
-        rowh = max(14.0, min(26.0, plot.height() / max(1, len(self.rows))))
+        rowh = max(float(ROW_MIN), min(26.0, plot.height() / max(1, len(self.rows))))
         vmax = max(abs(v) for _, v in self.rows) or 1.0
         cx = plot.center().x(); half = plot.width() / 2 - 70
         p.setFont(QFont(self.font().family(), 9))
@@ -295,7 +344,8 @@ class DivergingBarChart(QWidget):
             w = half * abs(v) / vmax
             color = QColor("#34C759") if v > 0 else QColor("#FF453A")
             p.setPen(Qt.NoPen); p.setBrush(QBrush(color))
-            rect = QRectF(cx, y + 6, w, rowh - 18) if v > 0 else QRectF(cx - w, y + 6, w, rowh - 18)
+            bh = max(rowh - 14, 4.0)
+            rect = QRectF(cx, y + (rowh - 6 - bh) / 2, w, bh) if v > 0 else QRectF(cx - w, y + (rowh - 6 - bh) / 2, w, bh)
             p.drawRoundedRect(rect, 3, 3)
             p.setPen(fg)
             txt = "•••" if self.hide_values else fmt_money(abs(v))

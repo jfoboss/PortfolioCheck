@@ -177,6 +177,7 @@ def goal_year(rows: list[YearRow], target_monthly_real: float) -> int | None:
 
 
 from charts import LineChart
+from widgets import scroll_wrap
 
 
 # ---------------------------------------------------------------------------
@@ -296,12 +297,12 @@ class ForecastTab(QWidget):
         charts = QWidget(); charts.setAutoFillBackground(True); charts.setBackgroundRole(QPalette.Base)
         cl = QVBoxLayout(charts); cl.setContentsMargins(8, 8, 8, 8)
         cl.addWidget(self.chart_income, 1); cl.addWidget(self.chart_capital, 1)
-        right.addTab(charts, "Графики"); right.addTab(self.table, "По годам")
+        right.addTab(scroll_wrap(charts), "Графики"); right.addTab(self.table, "По годам")
         right_w = QWidget(); rl = QVBoxLayout(right_w); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
         rl.addWidget(self.status_box); rl.addWidget(right, 1)
 
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(form_w); split.addWidget(right_w)
+        split.addWidget(scroll_wrap(form_w, base_background=False)); split.addWidget(right_w)   # форма длинная — прокрутка
         split.setStretchFactor(0, 0); split.setStretchFactor(1, 1)
         split.setSizes([380, 700])
         lay = QVBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(split)

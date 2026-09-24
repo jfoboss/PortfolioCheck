@@ -46,7 +46,7 @@ import config_migrate as CM
 from osutil import native_keys, IS_MAC
 
 from ui_common import APP_NAME, get_token, ensure_config
-from widgets import BusySpinner
+from widgets import BusySpinner, scroll_wrap
 from workers import FairPriceWorker, LoadWorker
 from screens.history import HistoryMixin
 from screens.news import NewsMixin
@@ -341,7 +341,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         left.addWidget(self.tbl_classes)
         sum_charts = self._doc_panel(QWidget()); scl = QHBoxLayout(sum_charts); scl.setContentsMargins(4, 4, 4, 4)
         scl.addWidget(self.chart_ranges, 1); scl.addWidget(self.chart_rebalance, 1)
-        left.addWidget(sum_charts); left.setStretchFactor(0, 3); left.setStretchFactor(1, 2)
+        left.addWidget(scroll_wrap(sum_charts)); left.setStretchFactor(0, 3); left.setStretchFactor(1, 2)
         right = QSplitter(Qt.Vertical); right.setObjectName("overview_right")
         sig_w = QWidget(); sl = QVBoxLayout(sig_w); sl.setContentsMargins(0, 0, 0, 0)
         self.lbl_signals_title = QLabel("<b>Сигналы</b>"); sl.addWidget(self.lbl_signals_title); sl.addWidget(self.txt_signals, 1)
@@ -369,14 +369,15 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         pies = self._doc_panel(QWidget()); pl = QVBoxLayout(pies); pl.setContentsMargins(4, 4, 4, 4)
         for pie in (self.pie_currency, self.pie_companies, self.pie_sectors):
             pl.addWidget(pie, 1)
-        pos_top = QSplitter(Qt.Horizontal); pos_top.addWidget(self.tbl_pos); pos_top.addWidget(pies)
+        pies.setMinimumWidth(300)
+        pos_top = QSplitter(Qt.Horizontal); pos_top.addWidget(self.tbl_pos); pos_top.addWidget(scroll_wrap(pies))
         pos_top.setStretchFactor(0, 3); pos_top.setStretchFactor(1, 1)
         blocked_w = self._doc_panel(QWidget()); bl = QVBoxLayout(blocked_w); bl.setContentsMargins(8, 8, 8, 8)
         bl.addWidget(self.lbl_blocked)
         b_split = QSplitter(Qt.Horizontal); b_split.setObjectName("blocked"); b_split.addWidget(self.tbl_blocked)
         b_charts = QWidget(); bcl = QHBoxLayout(b_charts); bcl.setContentsMargins(0, 0, 0, 0)
         bcl.addWidget(self.bar_blocked, 3); bcl.addWidget(self.pie_blocked, 2)
-        b_split.addWidget(b_charts); b_split.setStretchFactor(0, 3); b_split.setStretchFactor(1, 2)
+        b_split.addWidget(scroll_wrap(self._doc_panel(b_charts))); b_split.setStretchFactor(0, 3); b_split.setStretchFactor(1, 2)
         bl.addWidget(b_split, 1)
         self.pos_split = QSplitter(Qt.Vertical); self.pos_split.setObjectName("portfolio")
         self.pos_bottom = QTabWidget(); self.pos_bottom.setDocumentMode(True)
@@ -434,12 +435,14 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         hist_w = self._doc_panel(QWidget()); hsl2 = QVBoxLayout(hist_w); hsl2.setContentsMargins(8, 8, 8, 8)
         hsl2.addWidget(self.chart_history, 1); hsl2.addWidget(self.lbl_history)
         strat_bottom = QSplitter(Qt.Horizontal); strat_bottom.setObjectName("strategy_bottom")
-        strat_bottom.addWidget(hist_w); strat_bottom.addWidget(self._build_attribution_panel())
+        strat_bottom.addWidget(scroll_wrap(hist_w)); strat_bottom.addWidget(self._build_attribution_panel())
         strat_bottom.addWidget(self.txt_report)
         strat_bottom.setStretchFactor(0, 3); strat_bottom.setStretchFactor(1, 3); strat_bottom.setStretchFactor(2, 2)
+        strat_bottom.setSizes([3000, 3000, 2000])      # пропорция 3:3:2 — у прокруток маленькая подсказка размера
         strategy = QSplitter(Qt.Vertical); strategy.setObjectName("strategy")
         strategy.addWidget(self.forecast); strategy.addWidget(strat_bottom)
         strategy.setStretchFactor(0, 3); strategy.setStretchFactor(1, 2)
+        strat_bottom.setMinimumHeight(180)            # на низком окне не схлопывается в полоску под формой
         st = QWidget(); stl = QVBoxLayout(st); stl.setContentsMargins(8, 8, 8, 8)
         stl.addWidget(self.exec_panels["strategy"]); stl.addWidget(strategy, 1)
         self.tabs.addTab(st, "Стратегия")

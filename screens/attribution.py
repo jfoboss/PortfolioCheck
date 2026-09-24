@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidg
 import attribution as AT
 import portfolio_check as pc
 from charts import DivergingBarChart
+from widgets import scroll_wrap
 from ui_common import MASK
 
 
@@ -26,7 +27,7 @@ class AttributionMixin:
                                             empty_text="нужно минимум два снапшота")
         self.lbl_attr_top = QLabel(); self.lbl_attr_top.setWordWrap(True); self.lbl_attr_top.setStyleSheet("color: gray")
         lay.addLayout(top); lay.addWidget(self.lbl_attr); lay.addWidget(self.chart_attr, 1); lay.addWidget(self.lbl_attr_top)
-        return w
+        return scroll_wrap(w)                                   # текст + бары: на низком окне — прокрутка, не наложение
 
     def render_attribution(self) -> None:
         if not hasattr(self, "chart_attr"):

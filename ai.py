@@ -359,7 +359,8 @@ def _describe_429(e, body: dict) -> RateLimited:
 def _post(url: str, headers: dict, body: dict, proxy: str = "", timeout: int = 120) -> dict:
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", **headers}, method="POST")
-    handlers = []
+    import tls
+    handlers = [tls.https_handler()]                 # системные корни ОС — иначе собранная программа не видит OpenRouter
     if proxy:
         handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
     opener = urllib.request.build_opener(*handlers)

@@ -43,7 +43,8 @@ class Macro:
 
 
 def fetch_cbr_macro(ca_bundle: Path | None = None, timeout: int = 15) -> Macro:
-    ctx = ssl.create_default_context(cafile=str(ca_bundle)) if ca_bundle and ca_bundle.exists() else None
+    import tls
+    ctx = ssl.create_default_context(cafile=str(ca_bundle)) if ca_bundle and ca_bundle.exists() else tls.system_context()
     req = urllib.request.Request(CBR_URL, headers={"User-Agent": "Mozilla/5.0 PortfolioCheck"})
     with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
         html = resp.read().decode("utf-8", "replace")

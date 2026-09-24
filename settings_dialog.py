@@ -167,6 +167,19 @@ def server_chain(host: str, port: int = 443, timeout: int = 20) -> list[tuple[st
 # Окно настроек
 # ---------------------------------------------------------------------------
 
+def short_error(msg: str) -> str:
+    """Ошибка загрузки ленты → пара слов для узкой колонки; полный текст — в подсказке."""
+    m = msg.lower()
+    for key, text in (("certificate_verify_failed", "сертификат не прошёл проверку"), ("ssl", "ошибка TLS"),
+                      ("timed out", "нет ответа"), ("timeout", "нет ответа"), ("403", "доступ запрещён (403)"),
+                      ("404", "адрес не найден (404)"), ("name or service", "сайт не найден (DNS)"),
+                      ("nodename", "сайт не найден (DNS)"), ("getaddrinfo", "сайт не найден (DNS)"),
+                      ("refused", "соединение отклонено"), ("новостей: 0", "лента пустая")):
+        if key in m:
+            return text
+    return msg[:30] + ("…" if len(msg) > 30 else "")
+
+
 class FeedCheckWorker(QThread):
     """Параллельная проверка RSS-источников: сигнал по каждому, как только он ответил."""
     one = Signal(str, bool, str)
@@ -290,7 +303,7 @@ class ModelPicker(QWidget):
         self.form = None                 # строки каталога живут в форме настроек отдельными строками
         self.cb_free.toggled.connect(self._fill)
         self.b_reload = QPushButton("Обновить список"); self.b_reload.setToolTip("Загрузить свежий каталог моделей OpenRouter")
-        self.lbl = QLabel(); self.lbl.setStyleSheet("color: gray")
+        self.lbl = QLabel(); self.lbl.setStyleSheet("color: gray"); self.lbl.setWordWrap(True)   # не распирает окно
         row.addWidget(self.cb_free); row.addWidget(self.b_reload); row.addWidget(self.lbl, 1)
         self.catalog_row = QWidget(); self.catalog_row.setLayout(row)
         lay.addWidget(self.combo)
@@ -410,9 +423,26 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._tab_ai(), "ИИ")
         self.tabs.addTab(self._tab_access(), "Доступ")
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.tabs)
+        # Разделы — списком слева, как в системных настройках macOS. Строка из 12 вкладок на macOS не прокручивается
+        # и распирала окно шире экрана MacBook. QTabWidget остаётся (без своей строки): settings_win.tabs.setCurrentIndex
+        # и палитра команд работают как раньше. Страницы — в прокрутке: высокая страница не растягивает окно.
+        from PySide6.QtWidgets import QFrame, QListWidget, QScrollArea
+        pages = [(self.tabs.widget(i), self.tabs.tabText(i)) for i in range(self.tabs.count())]
+        self.tabs.clear()
+        for page, name in pages:
+            sa = QScrollArea(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.NoFrame); sa.setWidget(page)
+            self.tabs.addTab(sa, name)
+        self.tabs.tabBar().hide()
+        self.tabs.setDocumentMode(True)
+        self.nav = QListWidget(); self.nav.setObjectName("settings_nav")
+        self.nav.addItems([self.tabs.tabText(i) for i in range(self.tabs.count())])
+        self.nav.setFixedWidth(self.nav.sizeHintForColumn(0) + 36)
+        self.nav.currentRowChanged.connect(self.tabs.setCurrentIndex)
+        self.tabs.currentChanged.connect(lambda i: self.nav.currentRow() != i and self.nav.setCurrentRow(i))
+        self.nav.setCurrentRow(0)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(8, 8, 0, 0)
+        lay.addWidget(self.nav); lay.addWidget(self.tabs, 1)
         self._loading = False
 
     # ---- автосохранение -----------------------------------------------------
@@ -440,7 +470,8 @@ class SettingsDialog(QDialog):
         w = QWidget(); form = QFormLayout(w); form.setContentsMargins(20, 16, 20, 16)
         form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         rf = self.cfg.get("refresh", {})
-        self.cb_on_launch = QCheckBox("При запуске обновлять из API, если данные на диске старше интервала (иначе показать сохранённые)")
+        self.cb_on_launch = QCheckBox("Обновлять при запуске, если данные старше интервала")
+        self.cb_on_launch.setToolTip("Иначе при запуске показываются сохранённые на диске данные, а обновление — по кнопке или по расписанию")
         self.cb_on_launch.setChecked(bool(rf.get("on_launch", True)))
         self.cb_on_launch.toggled.connect(self._touch)
         self.cmb_interval = QComboBox()
@@ -448,10 +479,11 @@ class SettingsDialog(QDialog):
             self.cmb_interval.addItem(label, minutes)
         self.cmb_interval.setCurrentIndex(max(0, self.cmb_interval.findData(int(rf.get("interval_min", 60)))))
         self.cmb_interval.currentIndexChanged.connect(self._touch)
-        self.cb_privacy = QCheckBox("Запускать со скрытыми суммами (проценты и названия видны, суммы — нет)")
+        self.cb_privacy = QCheckBox("Запускать со скрытыми суммами")
+        self.cb_privacy.setToolTip("Проценты и названия видны, суммы — нет")
         self.cb_privacy.setChecked(bool(rf.get("privacy_on_launch", True)))
         self.cb_privacy.toggled.connect(self._touch)
-        self.cb_notify = QCheckBox("Показывать уведомление, если после обновления появились сигналы")
+        self.cb_notify = QCheckBox("Уведомлять о новых сигналах после обновления")
         self.cb_notify.setChecked(bool(rf.get("notify", True)))
         self.cb_notify.toggled.connect(self._touch)
         form.addRow(self.cb_on_launch)
@@ -476,15 +508,16 @@ class SettingsDialog(QDialog):
         b_prm.clicked.connect(lambda: __import__("strategy").copy_prompt_to_clipboard(self))
         row_s.addWidget(b_exp); row_s.addWidget(b_imp); row_s.addWidget(b_prm); row_s.addStretch()
         form.addRow(row_s)
-        self.cb_auto_cls = QCheckBox("Автоматически классифицировать новые бумаги (акции → ядро, золото → металлы, ЗПИФ → недвижимость)")
+        self.cb_auto_cls = QCheckBox("Классифицировать новые бумаги автоматически")
+        self.cb_auto_cls.setToolTip("Акции → ядро, золото → металлы, ЗПИФ → недвижимость; поправить можно в «Инструментах»")
         self.cb_auto_cls.setChecked(bool(self.cfg.get("auto_classify", True))); self.cb_auto_cls.toggled.connect(self._touch)
         form.addRow(self.cb_auto_cls)
 
         # ---- хранилище настроек ----
         form.addRow(QLabel("<b>Где хранить настройки и снапшоты</b>"))
         cur = paths.data_dir(); mode = paths.mode_of(cur)
-        self.rb_icloud = QRadioButton("iCloud Drive — общие для всех твоих Mac" + ("" if paths.icloud_available() else " (iCloud Drive на этом Mac не включён)"))
-        self.rb_local = QRadioButton("Только на этом Mac")
+        self.rb_icloud = QRadioButton("iCloud Drive — общие для всех твоих Mac" + ("" if paths.icloud_available() else " (не включён)"))
+        self.rb_local = QRadioButton("Только на этом компьютере")
         self.rb_custom = QRadioButton("Другая папка (Dropbox, MEGAsync, …)")
         self.rb_icloud.setEnabled(paths.icloud_available())
         if paths.DEMO_DIR is not None:                 # демо: временная папка, переключать некуда
@@ -816,9 +849,9 @@ class SettingsDialog(QDialog):
             cat_boxes = []
             for url, title in items:
                 line = QHBoxLayout()
-                cb = QCheckBox(f"{title} — {url}")
+                cb = QCheckBox(title); cb.setToolTip(url)            # адрес — в подсказке: строка не распирает окно
                 cb.setChecked(url in have); cb.setProperty("url", url)
-                st = QLabel("проверяю…"); st.setStyleSheet("color: gray"); st.setMinimumWidth(150)
+                st = QLabel("проверяю…"); st.setStyleSheet("color: gray"); st.setFixedWidth(230)
                 status_labels[url] = st
                 line.addWidget(cb, 1); line.addWidget(st)
                 boxes.append(cb); cat_boxes.append(cb); il.addLayout(line)
@@ -826,6 +859,7 @@ class SettingsDialog(QDialog):
             b_none.clicked.connect(lambda _=False, bs=cat_boxes: [c.setChecked(False) for c in bs])
         il.addStretch()
         sc = QScrollArea(); sc.setWidget(inner); sc.setWidgetResizable(True); lay.addWidget(sc, 1)
+        sc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         # проверка всех источников каталога — сразу при открытии, параллельно, не блокируя окно
         results: dict[str, bool] = {}
@@ -834,7 +868,7 @@ class SettingsDialog(QDialog):
             results[url] = ok
             lbl = status_labels.get(url)
             if lbl is not None:
-                lbl.setText(("✓ " if ok else "✗ ") + msg[:60])
+                lbl.setText(("✓ " if ok else "✗ ") + (msg[:30] if ok else short_error(msg)))
                 lbl.setStyleSheet("color: #34C759" if ok else "color: #FF453A")
                 lbl.setToolTip(msg)
 
@@ -915,7 +949,8 @@ class SettingsDialog(QDialog):
         self.sp_ff.setValue(float(sc.get("min_free_float", 0))); self.sp_ff.valueChanged.connect(self._touch)
         self.ed_excl_sectors = QLineEdit(", ".join(sc.get("exclude_sectors") or [])); self.ed_excl_sectors.setPlaceholderText("например: IT, Здравоохранение")
         self.ed_excl_sectors.textChanged.connect(self._touch)
-        form.addRow("Средняя дивдоходность за 5 лет ≥ (отсекает разовых плательщиков):", self.sp_avg5)
+        form.addRow("Средняя дивдоходность за 5 лет ≥:", self.sp_avg5)
+        self.sp_avg5.setToolTip("Отсекает разовых плательщиков")
         form.addRow("P/E ≤:", self.sp_pe)
         form.addRow("Free float ≥:", self.sp_ff)
         form.addRow("Исключить отрасли (через запятую):", self.ed_excl_sectors)

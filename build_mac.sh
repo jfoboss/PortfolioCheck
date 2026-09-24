@@ -43,6 +43,10 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --hidden-import strategy \
   --hidden-import config_migrate \
   --hidden-import demo \
+  --hidden-import ui_common \
+  --hidden-import widgets \
+  --hidden-import workers \
+  --collect-submodules screens \
   --hidden-import wizard \
   --add-data "docs:docs" \
   --hidden-import portfolio_check \

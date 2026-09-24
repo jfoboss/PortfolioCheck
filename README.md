@@ -115,7 +115,7 @@ Python 3.12, PySide6 (Qt), [tinkoff-investments](https://github.com/RussianInves
 
 | файл | что внутри |
 |---|---|
-| `app.py` | главное окно, фоновые загрузки, экраны |
+| `app.py`, `screens/`, `workers.py`, `widgets.py`, `ui_common.py` | главное окно, экраны, фоновые загрузки |
 | `portfolio_check.py` | загрузка портфеля из API, классы, правила, отчёт |
 | `strategy.py` | шаблоны стратегий, автоклассификация, импорт/экспорт |
 | `wizard.py` | мастер первого запуска |

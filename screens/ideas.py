@@ -161,6 +161,7 @@ class IdeasMixin:
                           fmt(i.pe), fmt(i.net_debt_ebitda), fmt(i.roe, "{:.1f}%"), fmt(i.free_float, "{:.0f}%"), i.ex_div_date],
                          TINT_WARN if (i.net_debt_ebitda or 0) > 3 else None))
         self._fill(self.tbl_ideas, rows)
+        self.render_payouts()                      # отсечки кандидатов на «Календаре»
         # цвет и подсказки для иконок — по тикеру в строке (таблица сортируется пользователем)
         by_ticker = {i.ticker: i for i in ideas}
         for r in range(self.tbl_ideas.rowCount()):

@@ -145,6 +145,31 @@ def fill_caches(d: Path, positions) -> None:
         "stats": {"universe": 250, "checked": len(ideas), "with_cap": len(ideas), "errors": 0}}, ensure_ascii=False),
         encoding="utf-8")
 
+    # календарь выплат: прошлые выплаты (одна-две в год по бумаге) и несколько объявленных на ближайшие недели;
+    # «ожидается» достроит payouts.with_expected — как для настоящих данных
+    import payouts as PO
+    import random
+    today = date.today()
+    raw = []
+    declared = {"SBERP": 24, "PHOR": 9, "TRNFP": 47}          # тикер → через сколько дней отсечка
+    for p in positions:
+        per_year = float(p.div_12m)
+        if per_year <= 0:
+            continue
+        rnd = random.Random("div" + p.ticker)
+        n = 2 if p.ticker in ("LKOH", "PHOR", "MTSS") else 1
+        for k in range(n):
+            rec = today - timedelta(days=rnd.randint(30, 330) if n == 1 else 60 + 170 * k + rnd.randint(0, 40))
+            raw.append(PO.Payout(p.ticker, p.name, rec.isoformat(), (rec - timedelta(days=1)).isoformat(),
+                                 (rec + timedelta(days=14)).isoformat(), round(per_year / n, 4), p.currency,
+                                 float(p.quantity), round(per_year / n * float(p.quantity), 2), "paid"))
+        if p.ticker in declared:
+            rec = today + timedelta(days=declared[p.ticker])
+            raw.append(PO.Payout(p.ticker, p.name, rec.isoformat(), (rec - timedelta(days=1)).isoformat(),
+                                 (rec + timedelta(days=12)).isoformat(), round(per_year / n * 1.05, 4), p.currency,
+                                 float(p.quantity), round(per_year / n * 1.05 * float(p.quantity), 2), "declared"))
+    PO.save(PO.with_expected(raw, today), cache)
+
     # история стоимости: снапшот на первое число последних 12 месяцев — текущий состав по ценам тех дней,
     # масштабированный под пополнения (раньше позиций было меньше)
     rows = json.loads(SNAPSHOT.read_text(encoding="utf-8"))

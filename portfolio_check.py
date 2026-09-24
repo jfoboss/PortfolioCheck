@@ -735,10 +735,13 @@ def load_portfolio(token: str, cfg: dict) -> list[Position]:
         return fetch_positions(client, account_id, cfg)
 
 
-def fetch_income_estimate(client, positions: list[Position], fx: dict[str, Decimal] | None = None) -> Decimal:
+def fetch_income_estimate(client, positions: list[Position], fx: dict[str, Decimal] | None = None,
+                          payouts_out: list | None = None) -> Decimal:
     """Сумма выплат за последние 12 месяцев по всем позициям × количество, после НДФЛ 13%.
+    Тем же запросом (окно на год вперёд) собираются объявленные будущие выплаты для календаря — в payouts_out.
     Best-effort: бумаги, по которым API выплат не отдаёт (часть ЗПИФ, иностранные), просто не учитываются."""
     from datetime import timedelta, timezone
+    import payouts as PO
     _, _, _, money_to_decimal = _sdk()
     fx = fx or {}
     now = datetime.now(timezone.utc)
@@ -747,32 +750,38 @@ def fetch_income_estimate(client, positions: list[Position], fx: dict[str, Decim
         if not p.figi or p.instrument_type not in ("share", "etf"):
             continue
         try:
-            divs = client.instruments.get_dividends(figi=p.figi, from_=now - timedelta(days=365), to=now).dividends
+            divs = client.instruments.get_dividends(figi=p.figi, from_=now - timedelta(days=365),
+                                                    to=now + timedelta(days=365)).dividends
         except Exception:  # noqa: BLE001
             continue
-        per_share = sum((money_to_decimal(d.dividend_net) for d in divs), Decimal(0)) * Decimal("0.87")
+        # доход за 12 мес — только прошедшие отсечки (будущие объявленные — в календарь)
+        past = [d for d in divs if not getattr(d, "record_date", None) or d.record_date <= now]
+        per_share = sum((money_to_decimal(d.dividend_net) for d in past), Decimal(0)) * Decimal("0.87")
         p.div_12m = per_share
         rate = fx.get(p.currency, Decimal(1))
         total += per_share * p.quantity * rate
+        if payouts_out is not None:
+            payouts_out += PO.from_dividends(p, divs, float(rate), money_to_decimal, now.date())
     return total
 
 
-def load_portfolio_full(token: str, cfg: dict) -> tuple[list[Position], Decimal, object]:
-    """Позиции + оценка годового дохода + макро ЦБ (инфляция, ставка). Используется приложением."""
+def load_portfolio_full(token: str, cfg: dict) -> tuple[list[Position], Decimal, object, list]:
+    """Позиции + оценка годового дохода + макро ЦБ (инфляция, ставка) + выплаты для календаря. Для приложения."""
     Client, *_ = _sdk()
     _setup_grpc_roots()
     with Client(token) as client:
         account_id = pick_account(client, cfg.get("account", {}).get("id", ""))
         positions = fetch_positions(client, account_id, cfg)
         fx = fetch_fx(client, cfg.get("fx_fallback", {}))
-        income = fetch_income_estimate(client, positions, fx)
+        payouts: list = []
+        income = fetch_income_estimate(client, positions, fx, payouts)
     macro = None
     try:
         from macro import fetch_cbr_macro
         macro = fetch_cbr_macro(_bundle_path())
     except Exception as e:  # noqa: BLE001
         _log.warning("макро ЦБ не получено: %s", e)
-    return positions, income, macro
+    return positions, income, macro, payouts
 
 
 def save_snapshot(positions: list[Position], path: str) -> None:

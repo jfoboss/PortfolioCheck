@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 HIDDEN = ["settings_dialog", "forecast", "charts", "macro", "paths", "history", "news", "screener", "diagnostics", "ai",
-          "secrets_store", "strategy", "config_migrate", "demo", "ui_common", "widgets", "workers", "osutil", "wizard",
+          "secrets_store", "strategy", "config_migrate", "demo", "ui_common", "widgets", "workers", "osutil", "payouts", "wizard",
           "portfolio_check", "keyring.backends.Windows"]
 DATA = ["icon.svg", "config.yaml", "demo_snapshot.json", "docs"]
 

@@ -22,6 +22,7 @@ assert "ДЕМО" in w.windowTitle()
 assert len(w.positions) > 0 and not w.needs_setup(), "демо-портфель не загрузился с диска"
 assert all(p.cls != "unclassified" for p in w.positions)
 assert w.news_items and w.tbl_ideas.rowCount() > 0, "экран «Рынок» в демо пустой"
+assert w.tbl_payouts.rowCount() >= 3 and w.tbl_cand_div.rowCount() > 0, "календарь в демо пустой"
 assert len(list((d / "snapshots").glob("*.json"))) > 6, "нет истории стоимости"
 assert A.get_token() is None
 assert SEC.set("svc", "u", "секрет") == "session" and SEC.get("svc", "u") == "секрет"

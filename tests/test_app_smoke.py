@@ -114,7 +114,7 @@ def test_menu_has_everything_for_macos(window):
               "Мастер настройки…", "Открыть снапшот…", "Сохранить снапшот…"):
         assert k in acts, k
     tabs = [window.tabs.tabText(i) for i in range(window.tabs.count())]
-    assert tabs == ["Обзор", "Портфель", "Рынок", "Идеи", "Стратегия"]      # «О программе» — не вкладка
+    assert tabs == ["Обзор", "Портфель", "Календарь", "Рынок", "Идеи", "Стратегия"]      # «О программе» — не вкладка
     for i, t in enumerate(tabs):
         assert acts[t].shortcut() == QKeySequence(f"Ctrl+{i + 1}")
     acts["Идеи"].trigger()

@@ -54,13 +54,14 @@ from screens.summaries import ExecSummaryMixin
 from screens.ideas import IdeasMixin
 from screens.privacy import PrivacyMixin
 from screens.overview import RenderMixin
+from screens.payouts import PayoutsMixin
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, QMainWindow):
+class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyMixin, RenderMixin, PayoutsMixin, QMainWindow):
     def __init__(self, config_path: str):
         super().__init__()
         self.config_path = config_path
@@ -363,6 +364,9 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         pfl.addWidget(self.exec_panels["portfolio"]); pfl.addWidget(self.pos_split, 1)
         self.tabs.addTab(pf, "Портфель")
 
+        # ================= экран: Календарь выплат =================
+        self.tabs.addTab(self._build_payouts_tab(), "Календарь")
+
         # ================= экран 3: Рынок =================
         heat_w = self._doc_panel(QWidget()); hl = QVBoxLayout(heat_w); hl.setContentsMargins(8, 8, 8, 8)
         hl.addLayout(heat_row); hl.addWidget(self.treemap, 1); hl.addWidget(self.lbl_heat)
@@ -574,7 +578,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         return f"{age} мин назад" if age < 120 else f"{age // 60} ч назад"
 
     def load_from_disk(self) -> None:
-        """Всё, что есть на диске: снапшот портфеля, кэш свечей → heatmap, новости, ИИ-сводки."""
+        """Всё, что есть на диске: снапшот портфеля, кэш свечей → heatmap, новости, ИИ-сводки, календарь выплат."""
+        self.load_payouts_from_disk()
         f = self._latest_snapshot()
         if f is None:
             return
@@ -755,7 +760,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.worker.start()
 
     def on_loaded(self, result) -> None:
-        positions, income, macro = (tuple(result) + (None, None))[:3] if isinstance(result, tuple) else (result, None, None)
+        positions, income, macro, payouts_raw = ((tuple(result) + (None, None, None))[:4] if isinstance(result, tuple)
+                                                 else (result, None, None, None))
         auto = ST.auto_classify(positions, self.cfg)
         if auto:
             pc.save_config(self.cfg, self.config_path)
@@ -766,6 +772,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
             self._reclassify()
         self._income_estimate = float(income) if income else None
         self._macro = macro
+        if payouts_raw is not None:
+            self.set_payouts(payouts_raw)
         self.act_refresh.setEnabled(True)
         self.bar.setVisible(False)
         names = self._names_from_positions()

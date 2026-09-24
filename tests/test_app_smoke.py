@@ -148,3 +148,38 @@ def test_security_card_collects_everything(window, demo_positions):
     window.set_privacy(True); card.refresh()
     assert card.tbl_pay.item(0, 4).text() == "•••" or "•" in card.tbl_pay.item(0, 4).text()
     card.close()
+
+
+def test_guest_mode_and_switch_to_real_profile(qapp, monkeypatch, isolated_home):
+    """Первый запуск без токена и данных — демо с одной кнопкой «Настроить…»; по ней — настоящий профиль и мастер,
+    кнопки стандартные, секреты снова из Keychain, временная папка демо удалена."""
+    import app as A
+    import paths
+    import secrets_store as SEC
+    import wizard as W
+    opened = []
+    monkeypatch.setattr(W.SetupWizard, "exec", lambda self: opened.append(1) or 0)
+    monkeypatch.setattr(A, "get_token", lambda: None)
+    assert A.should_start_as_guest()
+    demo_dir = isolated_home / "PortfolioCheck-demo-test"
+    demo_dir.mkdir()
+    monkeypatch.setattr(paths, "DEMO_DIR", demo_dir)          # как после demo.setup(); восстановится после теста
+    monkeypatch.setattr(SEC, "DISABLED", True)
+    cfg = isolated_home / "data" / "config.yaml"
+    A.ensure_config(cfg)
+    w = A.MainWindow(str(cfg)); w._demo_dir = demo_dir
+    w.enter_guest_mode()
+    assert w.act_setup.isVisible() and not w.act_refresh.isVisible() and not w.act_prefs.isVisible()
+    assert not w.act_privacy.isVisible() and w.banner_btn.text() == "Настроить…"
+    new = A.switch_to_real_profile(w)
+    try:
+        assert paths.DEMO_DIR is None and SEC.DISABLED is False and not demo_dir.exists()
+        assert not new.guest and new.act_refresh.isVisible() and new.act_prefs.isVisible() and not new.act_setup.isVisible()
+        from PySide6.QtCore import QEventLoop, QTimer
+        loop = QEventLoop(); QTimer.singleShot(700, loop.quit); loop.exec()
+        assert opened, "мастер настройки не открылся для нового пользователя"
+    finally:
+        new.close()
+    (isolated_home / "data" / "snapshots").mkdir(parents=True, exist_ok=True)
+    (isolated_home / "data" / "snapshots" / "2026-01-01.json").write_text("[]", encoding="utf-8")
+    assert not A.should_start_as_guest()                     # свои данные есть — демо не нужно

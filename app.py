@@ -159,7 +159,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         act_quit.setShortcut(QKeySequence.Quit if not QKeySequence(QKeySequence.Quit).isEmpty() else QKeySequence("Ctrl+Q"))
         act_quit.triggered.connect(self.close)
 
-        m_file = self.menuBar().addMenu("Файл")
+        m_file = self.menuBar().addMenu("Файл"); self.m_file = m_file
         act_wizard = QAction("Мастер настройки…", self); act_wizard.triggered.connect(lambda: self.run_wizard(first=False))
         m_file.addAction(act_wizard); m_file.addSeparator()
         m_file.addAction(act_open); m_file.addAction(act_save)
@@ -211,6 +211,14 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.act_refresh.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         self.act_prefs.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
         self.act_privacy.setIcon(self.style().standardIcon(QStyle.SP_DialogNoButton))
+        self.toolbar = tb
+        # «Настроить…» — только в гостевом режиме (демо без токена), см. enter_guest_mode
+        self.act_setup = QAction("Настроить…", self)
+        self.act_setup.setIcon(self.style().standardIcon(QStyle.SP_DialogApplyButton))
+        self.act_setup.setToolTip("Подключить свой портфель: мастер стратегии и токен T-Invest — пара минут")
+        self.act_setup.triggered.connect(self.leave_guest)
+        self.act_setup.setVisible(False)
+        tb.addAction(self.act_setup)
         tb.addAction(self.act_refresh)
         tb.addAction(self.act_privacy)
         spacer = QWidget(); spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred); tb.addWidget(spacer)
@@ -470,6 +478,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
             self.settings_win.close()
         if getattr(self, "about_win", None) is not None:
             self.about_win.close()
+        for c in list(getattr(self, "_cards", {}).values()):
+            c.close()
         super().closeEvent(event)
 
     def on_forecast_changed(self, params: dict) -> None:
@@ -839,6 +849,27 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
     def bundle_path() -> Path:
         return paths.data_dir() / "ca-bundle.pem"
 
+    # ---- гостевой режим: первый запуск без токена и данных — демо вместо пустого окна ----
+
+    guest = False
+
+    def enter_guest_mode(self) -> None:
+        """Демо-портфель с одной кнопкой «Настроить…»: обновлять, скрывать и настраивать в демо нечего."""
+        self.guest = True
+        self.act_setup.setVisible(True)
+        for a in (self.act_refresh, self.act_privacy, self.act_prefs):
+            a.setVisible(False)                   # и на тулбаре, и в меню (на macOS «Настройки» — в меню приложения)
+        self.m_file.insertAction(self.m_file.actions()[0], self.act_setup)
+        self.setWindowTitle("Портфель — проверка правил — демо")
+        self.show_banner("<b>Это демо на вымышленном портфеле</b> — так программа выглядит с данными. "
+                         "Чтобы увидеть свой портфель, нажми «Настроить…»: мастер стратегии (можно взять шаблон) и "
+                         "токен T-Invest только на чтение — пара минут.", "Настроить…", "")
+        self.banner_btn.clicked.disconnect()
+        self.banner_btn.clicked.connect(self.leave_guest)
+
+    def leave_guest(self) -> None:
+        switch_to_real_profile(self)
+
     def on_storage_changed(self, new_dir: Path) -> None:
         """Настройки → Общие сменили папку данных: перечитать конфиг оттуда и перезапустить окно настроек."""
         self.config_path = str(new_dir / "config.yaml")
@@ -851,6 +882,40 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.set_status(f"Папка данных: {new_dir}")
 
 # ---------------------------------------------------------------------------
+# Гостевой режим (первый запуск) и переход к настоящему профилю
+# ---------------------------------------------------------------------------
+
+WINDOWS: list = []          # живые окна: при переходе из демо окно пересоздаётся на настоящем профиле
+
+
+def should_start_as_guest() -> bool:
+    """Показать демо вместо пустого окна: токена нет и ни одного снапшота (новый пользователь или так и не
+    настроил). Если снапшоты есть (например, новый Mac без токена) — показываем свои данные, как раньше."""
+    if get_token():
+        return False
+    return not any((paths.data_dir() / "snapshots").glob("*.json"))
+
+
+def switch_to_real_profile(old: "MainWindow") -> "MainWindow":
+    """Из демо — в настоящий профиль без перезапуска: новое окно на реальном конфиге (для нового пользователя
+    сразу откроется мастер), демо-окно закрывается, временная папка удаляется."""
+    import demo
+    import secrets_store as SEC
+    paths.DEMO_DIR = None
+    SEC.DISABLED = False
+    SEC._cache.clear()                           # секреты читаются заново — уже из Keychain / диспетчера
+    cfg = paths.data_dir() / "config.yaml"
+    ensure_config(cfg)
+    w = MainWindow(str(cfg))
+    w.show()
+    WINDOWS.append(w)
+    old.close()
+    if old in WINDOWS:
+        WINDOWS.remove(old)
+    demo.cleanup_dir(old._demo_dir) if getattr(old, "_demo_dir", None) else None
+    log.info("гостевой режим: переход к настоящему профилю (%s)", cfg)
+    return w
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -864,10 +929,17 @@ def main() -> None:
         if args.config:
             ap.error("--demo и --config несовместимы: демо всегда работает на своём временном конфиге")
         args.config = str(demo.setup())            # до первого обращения к папке данных и Keychain
-    elif not args.config:
-        args.config = str(paths.data_dir() / "config.yaml")
-
-    DIAG.setup_logging(paths.data_dir())      # лог с самого старта, до создания окна
+    guest = False
+    if not args.demo and not args.config:
+        DIAG.setup_logging(paths.data_dir())  # лог настоящего профиля — и в гостевом режиме
+        guest = should_start_as_guest()
+        if guest:
+            import demo
+            args.config = str(demo.setup())
+        else:
+            args.config = str(paths.data_dir() / "config.yaml")
+    else:
+        DIAG.setup_logging(paths.data_dir())  # лог с самого старта, до создания окна
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     icon_path = Path(__file__).with_name("icon.svg")
@@ -875,7 +947,12 @@ def main() -> None:
         app.setWindowIcon(QIcon(str(icon_path)))
     ensure_config(Path(args.config))
     w = MainWindow(args.config)
-    app.aboutToQuit.connect(lambda: w.close())
+    WINDOWS.append(w)
+    app.aboutToQuit.connect(lambda: [x.close() for x in list(WINDOWS)])
+    if guest:
+        w._demo_dir = paths.DEMO_DIR
+        w.enter_guest_mode()
+        app.aboutToQuit.connect(demo.cleanup)
     if args.demo:
         w.show_banner("<b>Демо-режим:</b> вымышленный портфель, без токена и сети. Изменения живут до выхода "
                       "и удаляются вместе с временной папкой.")

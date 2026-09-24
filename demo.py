@@ -191,6 +191,10 @@ def fill_caches(d: Path, positions) -> None:
 
 
 def cleanup() -> None:
-    d = paths.DEMO_DIR
+    cleanup_dir(paths.DEMO_DIR)
+
+
+def cleanup_dir(d: Path | None) -> None:
+    """Удалить временную папку демо (только свою — по префиксу имени)."""
     if d is not None and d.name.startswith("PortfolioCheck-demo-"):
         shutil.rmtree(d, ignore_errors=True)

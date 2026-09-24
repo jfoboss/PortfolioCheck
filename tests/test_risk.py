@@ -26,10 +26,13 @@ def test_identical_assets_have_no_diversification():
 
 
 def test_opposite_assets_cancel_and_drawdown_is_negative():
+    """Регресс: при полном взаимном погашении дисперсия — ноль с шумом округления, знак шума зависит от ОС
+    (на macOS/Windows выходил ровно 0 → «диверсификация 1×» и вклады в риск 600% / −500%)."""
     up = lambda k: 100 * math.exp(0.01 * math.sin(k))
     down = lambda k: 100 * math.exp(-0.01 * math.sin(k))
     r = RK.analyze([P("A", 500), P("B", 500)], {"A": series(up), "B": series(down)}, today=TODAY)
     assert r.pairs[0][2] < -0.99 and r.vol < 0.5 and r.diversification > 10
+    assert all(abs(c) <= 100 for *_x, c in r.rows)                 # вклады не взрываются
     fall = lambda k: 100 * (1 - 0.001 * k)
     r2 = RK.analyze([P("A", 500), P("B", 500)], {"A": series(fall), "B": series(fall)}, today=TODAY)
     assert r2.max_drawdown < -20

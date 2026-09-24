@@ -68,7 +68,12 @@ def analyze(positions, candles: dict[str, list[tuple[str, float]]], days: int = 
     w = {p.ticker: float(p.value_rub) / w_used for p in used}          # веса среди бумаг с историей
     var_p = sum(w[a] * w[b] * cov[(a, b)] for a in tick for b in tick)
     sd = {t: math.sqrt(cov[(t, t)]) for t in tick}
-    vol_p = math.sqrt(max(var_p, 0.0))
+    undiv = sum(w[t] * sd[t] for t in tick)                    # риск без учёта корреляций
+    # Бумаги, полностью гасящие друг друга, дают дисперсию на уровне ошибки округления (±1e-20), и знак этого
+    # шума зависит от платформы — такую дисперсию считаем нулём: риск погашен, вклады не определены.
+    if var_p <= 1e-12 * undiv * undiv:
+        var_p = 0.0
+    vol_p = math.sqrt(var_p)
     ann = math.sqrt(TRADING_DAYS)
     contrib = {a: (w[a] * sum(w[b] * cov[(a, b)] for b in tick) / var_p * 100) if var_p else 0.0 for a in tick}
     names = {p.ticker: p.name for p in used}
@@ -90,5 +95,5 @@ def analyze(positions, candles: dict[str, list[tuple[str, float]]], days: int = 
         mdd = min(mdd, level / peak - 1)
     all_w = [float(p.value_rub) / total for p in live]
     eff_n = 1 / sum(x * x for x in all_w)
-    div = sum(w[t] * sd[t] for t in tick) / vol_p if vol_p else 1.0
+    div = undiv / vol_p if vol_p else (math.inf if undiv else 1.0)
     return RiskReport(n, vol_p * ann * 100, mdd * 100, eff_n, div, rows, pairs[:top_pairs], missing)

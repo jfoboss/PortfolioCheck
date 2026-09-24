@@ -68,7 +68,7 @@ class IdeasMixin:
         for idea in ideas:
             words = kw.get(idea.ticker, [])
             idea.news_count = sum(1 for it in getattr(self, "news_items", [])
-                                  if any(NEWS.mentions(f"{it.title} {it.summary}".lower(), w) for w in words))
+                                  if NEWS.refers(f"{it.title} {it.summary}".lower(), words))
             idea.news_sentiment = sent.get(idea.ticker, "")
             idea.news_note = notes.get(idea.ticker, "")
 

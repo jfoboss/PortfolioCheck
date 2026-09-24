@@ -158,3 +158,27 @@ def test_load_cached_default_window_is_a_year(tmp_path):
     H.save_series(tmp_path, "X", series(1.10, 5))
     assert len(H.load_cached(tmp_path, "X")) <= 411
     assert len(H.load_cached(tmp_path, "X", None)) == 5 * 365 + 1
+
+
+def test_news_offtopic_and_ambiguous_aliases():
+    """Регресс: к «Золоту» липли спортивные новости («победила в финале ЧЕ по боксу» — золото), к VTBR — «Единая
+    лига ВТБ» (баскетбол), к MOEX — всё «московское» (первое слово названия «Московская Биржа»)."""
+    pos = [NS(ticker="GLDRUB_TOM", name="Золото"), NS(ticker="VTBR", name="Банк ВТБ"),
+           NS(ticker="MOEX", name="Московская Биржа"), NS(ticker="XXXX", name="Энергосбыт")]
+    kw = N.build_keywords(pos, N.DEFAULT_ALIASES)
+    assert "Московская" not in kw["MOEX"] and "Энергосбыт" in kw["XXXX"]       # без алиасов имя по-прежнему в ходу
+
+    def it(title, summary=""):
+        return N.NewsItem(title, "", "s", None, [], summary)
+    items = [it("Россиянка победила украинку в финале ЧЕ по боксу", "и завоевала золото"),
+             it("В новом сезоне Единой лиги ВТБ на победу претендуют четыре команды"),
+             it("Московская филармония представила программу «Рамо»", "на сцене зала"),
+             it("«Золотая маска» объявила номинантов", "лучшая сцена сезона"),
+             it("Золото подорожало до рекорда", "цена унции выросла"),
+             it("ВТБ отчитался о прибыли"),
+             it("Мосбиржа запустила новые торги")]
+    got = {x.title: x.matched for x in N.match(items, kw)}
+    assert got == {"Золото подорожало до рекорда": ["GLDRUB_TOM"], "ВТБ отчитался о прибыли": ["VTBR"],
+                   "Мосбиржа запустила новые торги": ["MOEX"]}
+    assert not N.refers("сборная завоевала золото", kw["GLDRUB_TOM"])
+    assert N.refers("цены на золото растут", kw["GLDRUB_TOM"])

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from PySide6.QtWidgets import QStyledItemDelegate
+from PySide6.QtWidgets import QStyledItemDelegate, QTableWidgetItem
 from PySide6.QtGui import QPainter, QPen, QBrush
 
 
@@ -74,3 +74,29 @@ class BadgeDelegate(QStyledItemDelegate):
         f = option.font; f.setBold(True)
         s.setWidth(QFontMetrics(f).horizontalAdvance(index.data(Qt.DisplayRole) or "") + 22)
         return s
+
+
+class SortItem(QTableWidgetItem):
+    """Ячейка таблицы, которая сортируется по числу, если в ней число («1,234.5», «+12.3%», «▲ +2.4%», «31.79 ₽»),
+    и по тексту иначе. Стандартный QTableWidgetItem сравнивает строки: «18,300» оказывался больше «192,000».
+    Пустые и «—» при сортировке — в конце по возрастанию."""
+    _RE = __import__("re")
+    _NUM = _RE.compile(r"[-+−]?\d{1,3}(?:[, ]\d{3})*(?:\.\d+)?|[-+−]?\d+(?:\.\d+)?")
+    _DECOR = _RE.compile(r"[▲▼■%₽\s]|RUB|USD|EUR|CNY|HKD")
+
+    def _key(self):
+        t = self.text().strip()
+        if not t or t in ("—", "…", "•••"):
+            return None
+        core = self._DECOR.sub("", t)
+        if not self._NUM.fullmatch(core):                    # даты, время, тикеры, текст — сравниваем как текст
+            return t
+        return float(core.replace("−", "-").replace(",", "").replace(" ", ""))
+
+    def __lt__(self, other) -> bool:
+        a, b = self._key(), other._key() if isinstance(other, SortItem) else other.text()
+        if a is None or b is None:
+            return b is None and a is not None
+        if isinstance(a, float) and isinstance(b, float):
+            return a < b
+        return str(a) < str(b)

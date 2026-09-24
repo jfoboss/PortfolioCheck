@@ -3,6 +3,7 @@ screens/risk_panel.py — панель «Риск» на экране «Порт
 """
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 import history as H
@@ -15,7 +16,7 @@ class RiskMixin:
         w = self._doc_panel(QWidget()); lay = QVBoxLayout(w); lay.setContentsMargins(8, 8, 8, 8)
         self.lbl_risk = QLabel(); self.lbl_risk.setWordWrap(True)
         self.tbl_risk = self._table(["Бумага", "Тикер", "Вес, %", "Волатильность, % год", "Вклад в риск, %"])
-        self.tbl_risk.setSortingEnabled(False)      # уже по вкладу в риск; текстовая сортировка чисел путала бы порядок
+        self.tbl_risk.sortByColumn(4, Qt.DescendingOrder)   # по вкладу в риск; числа сортируются как числа (SortItem)
         self.lbl_risk_pairs = QLabel(); self.lbl_risk_pairs.setWordWrap(True); self.lbl_risk_pairs.setStyleSheet("color: gray")
         lay.addWidget(self.lbl_risk); lay.addWidget(self.tbl_risk, 1); lay.addWidget(self.lbl_risk_pairs)
         return w

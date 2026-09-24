@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 
 import portfolio_check as pc
 from ui_common import TINT_GOOD, TINT_WARN, TINT_BAD, MASK, mask_text
+from widgets import SortItem
 
 
 class RenderMixin:
@@ -163,7 +164,7 @@ class RenderMixin:
         table.setRowCount(len(rows))
         for r, (cells, color) in enumerate(rows):
             for c, val in enumerate(cells):
-                it = QTableWidgetItem(val)
+                it = SortItem(val)                 # числа сортируются как числа, а не как строки
                 if c > 0:
                     it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 if color:

@@ -200,3 +200,28 @@ def test_command_palette(window, demo_positions):
     window.settings_win.close()
     assert rank(items, "идеи", window)[0].title == "Экран «Идеи»"
     assert window.act_palette.shortcut() == QKeySequence("Ctrl+K")
+
+
+def test_numeric_columns_sort_as_numbers(window, demo_positions):
+    """Регресс: таблицы сортировали числа как строки — «18,300» оказывался больше «192,000», «-7.3» выше «+10.8»."""
+    from PySide6.QtCore import Qt
+    window.on_loaded((demo_positions, None, None, []))
+    window.set_privacy(False)
+    t = window.tbl_pos
+    col = next(c for c in range(t.columnCount()) if t.horizontalHeaderItem(c).text().startswith("Стоимость"))
+    t.sortByColumn(col, Qt.DescendingOrder)
+    vals = [float(t.item(r, col).text().replace(",", "")) for r in range(t.rowCount())]
+    assert vals == sorted(vals, reverse=True)
+    pl = t.columnCount() - 1
+    t.sortByColumn(pl, Qt.AscendingOrder)
+    pls = [float(t.item(r, pl).text()) for r in range(t.rowCount())]
+    assert pls == sorted(pls)
+
+
+def test_sort_item_keys(qapp):
+    """Числа в любом оформлении — числами; даты, время и текст — текстом (иначе «2026-10-03» стало бы 2026)."""
+    from widgets import SortItem
+    k = lambda t: SortItem(t)._key()
+    assert k("1,234.56") == 1234.56 and k("▲ +2.4%") == 2.4 and k("274.05 RUB") == 274.05 and k("−3.1") == -3.1
+    assert k("2026-10-03") == "2026-10-03" and k("24.09 07:36") == "24.09 07:36" and k("SBERP") == "SBERP"
+    assert k("—") is None and k("•••") is None

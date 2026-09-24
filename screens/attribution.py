@@ -9,7 +9,8 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidg
 import attribution as AT
 import portfolio_check as pc
 from charts import DivergingBarChart
-from ui_common import MASK
+from widgets import scroll_wrap, note
+import style as SY
 
 
 class AttributionMixin:
@@ -24,16 +25,16 @@ class AttributionMixin:
         self.lbl_attr = QLabel(); self.lbl_attr.setWordWrap(True)
         self.chart_attr = DivergingBarChart("Переоценка по классам, ₽", left_label="минус ←", right_label="→ плюс",
                                             empty_text="нужно минимум два снапшота")
-        self.lbl_attr_top = QLabel(); self.lbl_attr_top.setWordWrap(True); self.lbl_attr_top.setStyleSheet("color: gray")
+        self.lbl_attr_top = note()
         lay.addLayout(top); lay.addWidget(self.lbl_attr); lay.addWidget(self.chart_attr, 1); lay.addWidget(self.lbl_attr_top)
-        return w
+        return scroll_wrap(w)                                   # текст + бары: на низком окне — прокрутка, не наложение
 
     def render_attribution(self) -> None:
         if not hasattr(self, "chart_attr"):
             return
         classes = {p.ticker: p.cls for p in self.positions}
         a = AT.for_period(self.snap_dir(), self.cmb_attr.currentData(), classes, getattr(self, "payouts", []))
-        money = (lambda v: MASK) if self.privacy else (lambda v: f"{v:+,.0f}")
+        money = SY.money_fn(self.privacy, signed=True)
         self.chart_attr.hide_values = self.privacy
         if a is None:
             self.lbl_attr.setText("Снапшоты копятся с каждым обновлением — разложение появится, когда их будет хотя бы два.")

@@ -15,14 +15,12 @@ macro.py — макроданные с сайта ЦБ РФ: годовая ин
 from __future__ import annotations
 
 import html as _html
-import json
 import re
-import ssl
-import time
 from datetime import date
-import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
+import style as SY
+import jsoncache as JC
 
 CBR_URL = "https://www.cbr.ru/hd_base/infl/"
 CAL_URL = "https://www.cbr.ru/dkp/cal_mp/"
@@ -42,12 +40,10 @@ class Macro:
     target: float        # цель ЦБ, %
 
 
-def fetch_cbr_macro(ca_bundle: Path | None = None, timeout: int = 15) -> Macro:
-    ctx = ssl.create_default_context(cafile=str(ca_bundle)) if ca_bundle and ca_bundle.exists() else None
-    req = urllib.request.Request(CBR_URL, headers={"User-Agent": "Mozilla/5.0 PortfolioCheck"})
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-        html = resp.read().decode("utf-8", "replace")
-    return parse_cbr_table(html)
+def fetch_cbr_macro(timeout: int = 15) -> Macro:
+    """Сайт ЦБ — с корнями ОС (net.fetch), как остальные сайты; бандл T-Invest здесь не нужен."""
+    import net
+    return parse_cbr_table(net.fetch(CBR_URL, timeout=timeout).decode("utf-8", "replace"))
 
 
 def parse_cbr_table(html: str) -> Macro:
@@ -99,20 +95,17 @@ def parse_cbr_calendar(page: str) -> list[MacroEvent]:
 
 def load_calendar(cache_dir: Path) -> list[MacroEvent]:
     try:
-        return [MacroEvent(**x) for x in json.loads((cache_dir / CAL_FILE).read_text(encoding="utf-8"))["events"]]
-    except Exception:  # noqa: BLE001
+        return [MacroEvent(**x) for x in (JC.read(cache_dir / CAL_FILE) or {}).get("events", [])]
+    except TypeError:
         return []
 
 
 def calendar_fresh(cache_dir: Path) -> bool:
-    f = cache_dir / CAL_FILE
-    return f.exists() and time.time() - f.stat().st_mtime < CAL_MAX_AGE_S
+    return JC.fresh(cache_dir / CAL_FILE, CAL_MAX_AGE_S)
 
 
 def save_calendar(events: list[MacroEvent], cache_dir: Path) -> None:
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / CAL_FILE).write_text(json.dumps({"events": [asdict(e) for e in events]}, ensure_ascii=False),
-                                      encoding="utf-8")
+    JC.write(cache_dir / CAL_FILE, {"events": [asdict(e) for e in events]})
 
 
 def fetch_calendar(cache_dir: Path, fetch=None) -> str:
@@ -120,13 +113,13 @@ def fetch_calendar(cache_dir: Path, fetch=None) -> str:
     if calendar_fresh(cache_dir):
         return "ok"
     if fetch is None:
-        import news
-        fetch = news._fetch                    # системные корни TLS, как RSS
+        import net
+        fetch = net.fetch                      # корни ОС
     try:
         save_calendar(parse_cbr_calendar(fetch(CAL_URL).decode("utf-8", "replace")), cache_dir)
         return "ok"
     except Exception as e:  # noqa: BLE001
-        return f"{type(e).__name__}: {str(e)[:120]}"
+        return SY.err_text(e, 120)
 
 
 def upcoming(events: list[MacroEvent], today: date, days: int = 190) -> list[MacroEvent]:

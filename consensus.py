@@ -9,9 +9,8 @@ consensus.py — консенсус-прогнозы аналитиков по �
 """
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
+import jsoncache as JC
 
 MAX_AGE_S = 24 * 3600
 # Рейтинги домов — нейтральными словами: программа не произносит «купи/продай» даже чужими устами (правило 3)
@@ -65,21 +64,14 @@ def cache_path(cache_dir: Path, uid: str) -> Path:
 
 def load(cache_dir: Path, uid: str, max_age_s: int = MAX_AGE_S) -> dict | None:
     f = cache_path(cache_dir, uid)
-    try:
-        if time.time() - f.stat().st_mtime > max_age_s:
-            return None
-        return json.loads(f.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        return None
+    return JC.read(f) if JC.fresh(f, max_age_s) else None
 
 
 def fetch(token: str, uid: str, cache_dir: Path) -> dict | None:
     """Запрос к T-Invest (только из воркера). Пустой консенсус тоже кэшируется — чтобы не спрашивать каждый раз."""
     import portfolio_check as pc
-    Client, *_ = pc._sdk(); pc._setup_grpc_roots()
-    with Client(token) as client:
+    with pc.connect(token) as client:
         resp = client.instruments.get_forecast_by(instrument_id=uid)
     data = parse(resp) or {"consensus": None, "targets": []}
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path(cache_dir, uid).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    JC.write(cache_path(cache_dir, uid), data)
     return data

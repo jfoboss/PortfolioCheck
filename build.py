@@ -24,7 +24,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 _QAPP = None
 HIDDEN = ["settings_dialog", "forecast", "charts", "macro", "paths", "history", "news", "screener", "diagnostics", "ai",
-          "secrets_store", "strategy", "config_migrate", "demo", "ui_common", "widgets", "workers", "osutil", "payouts", "attribution", "export", "risk", "alerts", "factors", "scenarios", "consensus",
+          "secrets_store", "strategy", "config_migrate", "demo", "ui_common", "widgets", "workers", "osutil", "payouts", "attribution", "export", "risk", "alerts", "factors", "scenarios", "consensus", "net", "style", "jsoncache",
+          "truststore", "certifi",
           "wizard", "portfolio_check"]
 KEYRING_BACKENDS = {"win32": ["keyring.backends.Windows"], "linux": ["keyring.backends.SecretService"]}
 DATA = ["icon.svg", "config.yaml", "demo_snapshot.json", "docs"]

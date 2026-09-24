@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
 )
 
 from diagnostics import log
-from ui_common import APP_NAME, MASK, get_token
+import style as SY
+from ui_common import APP_NAME, get_token
 from osutil import SECRET_STORE_NAME, mono_font
 from widgets import BadgeDelegate
 
@@ -19,10 +20,9 @@ class PrivacyMixin:
     # ---- приватный режим ----------------------------------------------------
 
     def rub(self, v) -> str:
-        return MASK if self.privacy else f"{v:,.0f}"
+        return SY.money_fn(self.privacy)(v)
 
-    def qty(self, v) -> str:
-        return MASK if self.privacy else f"{v:,.0f}"
+    qty = rub                                       # количество бумаг скрывается так же, как сумма
 
     def set_privacy(self, on: bool) -> None:
         self.privacy = on

@@ -9,10 +9,10 @@ payouts.py — календарь выплат и денежного поток�
 """
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+import jsoncache as JC
 
 NDFL = 0.87                 # выплата после НДФЛ 13% — как в доходе за 12 месяцев
 CACHE_FILE = "payouts.json"
@@ -120,17 +120,15 @@ def monthly_cashflow(payouts: list[Payout], today: date | None = None, months: i
 
 
 def save(payouts: list[Payout], cache_dir: Path) -> None:
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / CACHE_FILE).write_text(json.dumps({"at": datetime.now().isoformat(timespec="seconds"),
-                                                    "items": [asdict(x) for x in payouts]}, ensure_ascii=False),
-                                        encoding="utf-8")
+    JC.write(cache_dir / CACHE_FILE, {"at": datetime.now().isoformat(timespec="seconds"),
+                                      "items": [asdict(x) for x in payouts]})
 
 
 def load(cache_dir: Path) -> tuple[list[Payout], str]:
     """Кэш с диска — календарь показывается при старте сразу, без сети. ([], '') если кэша нет или он битый."""
     try:
-        raw = json.loads((cache_dir / CACHE_FILE).read_text(encoding="utf-8"))
-        return [Payout(**r) for r in raw["items"]], raw.get("at", "")
+        raw = JC.read(cache_dir / CACHE_FILE) or {}
+        return [Payout(**r) for r in raw.get("items", [])], raw.get("at", "")
     except Exception:  # noqa: BLE001
         return [], ""
 

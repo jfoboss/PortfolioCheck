@@ -93,7 +93,7 @@ def test_calendar_screen(window):
     today = date.today()
     ev = [macro.MacroEvent((today + timedelta(days=d)).isoformat(), k, macro.KIND_LABEL[k], fc)
           for d, k, fc in ((-5, macro.MEETING, False), (5, macro.MEETING, True), (18, macro.SUMMARY, False), (400, macro.MEETING, False))]
-    macro.save_calendar(ev, paths.data_dir() / "cache")
+    macro.save_calendar(ev, paths.cache_dir())
     window.load_macro_calendar()
     assert window.tbl_macro.rowCount() == 2                                            # прошлое и дальше полугода — нет
     assert "среднесрочный прогноз" in window.tbl_macro.item(0, 0).text()

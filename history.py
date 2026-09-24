@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
+import jsoncache as JC
 
 PERIODS = [("day", "День", 1), ("week", "Неделя", 7), ("month", "Месяц", 30), ("year", "Год", 365)]
 
@@ -26,13 +27,15 @@ def _cache_file(cache_dir: Path, figi: str) -> Path:
 
 
 def load_cached(cache_dir: Path, figi: str) -> list[tuple[str, float]]:
-    f = _cache_file(cache_dir, figi)
-    if not f.exists():
-        return []
+    """Ряд «дата → цена закрытия» из cache/candles_<ключ>.json (свечи бумаг и факторы сценариев)."""
     try:
-        return [(d, float(c)) for d, c in json.loads(f.read_text(encoding="utf-8"))]
-    except Exception:  # noqa: BLE001
+        return [(d, float(c)) for d, c in JC.read(cache_dir / f"candles_{figi}.json", [])]
+    except (TypeError, ValueError):
         return []
+
+
+def save_series(cache_dir: Path, key: str, series) -> None:
+    JC.write(cache_dir / f"candles_{key}.json", [list(x) for x in series])
 
 
 def fetch_candles(client, figi: str, cache_dir: Path, days: int = 400, by_uid: bool = False) -> list[tuple[str, float]]:
@@ -62,7 +65,7 @@ def fetch_candles(client, figi: str, cache_dir: Path, days: int = 400, by_uid: b
     cutoff = (now - timedelta(days=days + 10)).strftime("%Y-%m-%d")
     series = [(d, c) for d, c in series if d >= cutoff]
     if series:
-        _cache_file(cache_dir, figi).write_text(json.dumps(series), encoding="utf-8")
+        save_series(cache_dir, figi, series)
     return series
 
 

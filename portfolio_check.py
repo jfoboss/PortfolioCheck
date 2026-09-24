@@ -75,6 +75,13 @@ def _setup_grpc_roots() -> None:
     os.environ.setdefault("GRPC_DEFAULT_SSL_ROOTS_FILE_PATH", str(p))
 
 
+def connect(token: str):
+    """Клиент T-Invest с нашим бандлом (корень Минцифры): `with pc.connect(token) as client: …`. Только из воркеров."""
+    _setup_grpc_roots()
+    Client, *_ = _sdk()
+    return Client(token)
+
+
 def _sdk():
     """Ленивый импорт SDK — чтобы модуль (модель, правила, рендер) импортировался и без него."""
     try:
@@ -326,12 +333,10 @@ def blocked_totals(rows: list[BlockedRow]) -> dict:
 
 def refresh_fair_prices(token: str, cfg: dict, positions: list[Position]) -> list[Position]:
     """Лёгкий запрос: только курсы и цены эталонов для заблокированных — без перезагрузки портфеля."""
-    Client, *_ = _sdk()
-    _setup_grpc_roots()
     apply_blocked_flags(positions, cfg)
     for p in positions:
         p.ref_ticker, p.fair_price, p.otc_price, p.otc_source = "", Decimal(0), Decimal(0), ""
-    with Client(token) as client:
+    with connect(token) as client:
         fx = fetch_fx(client, cfg.get("fx_fallback", {}))
         _fill_fair_prices(client, positions, cfg, fx)
     return positions
@@ -625,7 +630,7 @@ def check_rules(positions: list[Position], total: Decimal, rules: dict) -> dict[
 # ---------------------------------------------------------------------------
 
 import re as _re
-MASK = "•••"
+from style import MASK, money_fn   # noqa: E402 — маска «глазика» и формат сумм живут в style.py
 _MONEY_RE = _re.compile(r"(?<![\w%])[-+]?~?\d[\d\s,.]*\s*(?:тыс\.?|млн\.?|млрд\.?|к)?\s?(?:₽|руб\.?|рублей)", _re.I)
 
 
@@ -642,7 +647,7 @@ def render(positions: list[Position], cfg: dict, mask: bool = False) -> str:
     if mask:
         tgt_lines = [mask_text(l) for l in tgt_lines]
         rules = {k: [mask_text(l) for l in v] for k, v in rules.items()}
-    M = (lambda v: MASK) if mask else (lambda v: f"{v:,.0f}")
+    M = money_fn(mask)
 
     out = [f"# Портфель — {datetime.now():%d.%m.%Y %H:%M}", "",
            f"Стоимость: **{M(total)} ₽**", "", "## Доли по классам", "",
@@ -727,9 +732,7 @@ def main() -> None:
 
 def load_portfolio(token: str, cfg: dict) -> list[Position]:
     """Единая точка входа для CLI и GUI."""
-    _setup_grpc_roots()
-    Client, *_ = _sdk()
-    with Client(token) as client:
+    with connect(token) as client:
         account_id = pick_account(client, cfg.get("account", {}).get("id", ""))
         return fetch_positions(client, account_id, cfg)
 
@@ -766,9 +769,7 @@ def fetch_income_estimate(client, positions: list[Position], fx: dict[str, Decim
 
 def load_portfolio_full(token: str, cfg: dict) -> tuple[list[Position], Decimal, object, list]:
     """Позиции + оценка годового дохода + макро ЦБ (инфляция, ставка) + выплаты для календаря. Для приложения."""
-    Client, *_ = _sdk()
-    _setup_grpc_roots()
-    with Client(token) as client:
+    with connect(token) as client:
         account_id = pick_account(client, cfg.get("account", {}).get("id", ""))
         positions = fetch_positions(client, account_id, cfg)
         fx = fetch_fx(client, cfg.get("fx_fallback", {}))
@@ -777,7 +778,7 @@ def load_portfolio_full(token: str, cfg: dict) -> tuple[list[Position], Decimal,
     macro = None
     try:
         from macro import fetch_cbr_macro
-        macro = fetch_cbr_macro(_bundle_path())
+        macro = fetch_cbr_macro()
     except Exception as e:  # noqa: BLE001
         _log.warning("макро ЦБ не получено: %s", e)
     return positions, income, macro, payouts

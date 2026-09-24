@@ -6,14 +6,17 @@ from __future__ import annotations
 from decimal import Decimal
 
 from PySide6.QtCore import Qt
-import re
 from PySide6.QtWidgets import (
     QTableWidget, QHeaderView,
 )
 
 import portfolio_check as pc
-from ui_common import TINT_GOOD, TINT_WARN, TINT_BAD, MASK, mask_text
-from widgets import SortItem
+from ui_common import TINT_GOOD, TINT_WARN, TINT_BAD, mask_text
+from widgets import SortItem, icon_column
+import style as SY
+
+CLASS_LEGEND = {"✓": ("в коридоре", SY.GOOD), "▼": ("недовес до нижней границы коридора", SY.WARN),
+                "▲": ("перевес над верхней границей коридора", SY.BAD)}
 
 
 class RenderMixin:
@@ -39,15 +42,16 @@ class RenderMixin:
                 lo, hi = targets[cls]["min"], targets[cls]["max"]
                 tgt = f"{lo}–{hi}%" if lo != hi else f"{lo}%"
                 if share < Decimal(str(lo)):
-                    status, color = f"недовес {((Decimal(str(lo)) - share) / 100 * total):,.0f} ₽", TINT_WARN
+                    status, color = f"▼ {((Decimal(str(lo)) - share) / 100 * total):,.0f} ₽", TINT_WARN
                 elif share > Decimal(str(hi)):
-                    status, color = f"перевес {((share - Decimal(str(hi))) / 100 * total):,.0f} ₽", TINT_BAD
+                    status, color = f"▲ {((share - Decimal(str(hi))) / 100 * total):,.0f} ₽", TINT_BAD
                 else:
-                    status, color = "в коридоре", TINT_GOOD
+                    status, color = "✓", TINT_GOOD
             if self.privacy:
-                status = re.sub(r"\d[\d,\s]*\s?₽", MASK + " ₽", status)
+                status = mask_text(status)
             rows.append(([pc.class_label(cls), self.rub(v), f"{share:.1f}%", tgt, status], color))
         self._fill(self.tbl_classes, rows)
+        icon_column(self.tbl_classes, 4, CLASS_LEGEND)
 
         # Графики сводки: доли vs коридоры, и дельты в ₽
         range_rows, rebalance_rows = [], []

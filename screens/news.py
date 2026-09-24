@@ -14,17 +14,17 @@ from PySide6.QtWidgets import (
 
 import paths
 import ai as AI
-import secrets_store as SEC
 from diagnostics import log
 import news as NEWS
 from workers import NewsWorker, AIWorker
+from widgets import is_running
 
 
 class NewsMixin:
     # ---- новости ------------------------------------------------------------
 
     def refresh_news(self) -> None:
-        if getattr(self, "news_worker", None) is not None and self.news_worker.isRunning():
+        if is_running(getattr(self, "news_worker", None)):
             return
         if not self.positions:
             self.pipeline_step("news", "идеи"); self.run_screener(auto=True); return
@@ -40,10 +40,10 @@ class NewsMixin:
             log.warning("недоступные RSS: %s", ", ".join(failed))
         self.btn_news.setEnabled(True)
         self.set_status(f"Новости: {len(self.news_items)} по твоим бумагам" + (f", недоступны источники: {len(failed)}" if failed else ""))
-        NEWS.save_cache(self.news_items, paths.data_dir() / "cache")
+        NEWS.save_cache(self.news_items, paths.cache_dir())
         self.check_alerts()                        # новости по бумагам
         self.pipeline_step("news", "идеи")
-        if (self.cfg.get("ai") or {}).get("auto", True) and self.ai_key((self.cfg.get("ai") or {}).get("provider", "openrouter")):
+        if (self.cfg.get("ai") or {}).get("auto", True) and self.ai_conf():
             QTimer.singleShot(0, self.run_ai)
         QTimer.singleShot(0, lambda: self.run_screener(auto=True))
         self._fill_news_filter()
@@ -116,30 +116,27 @@ class NewsMixin:
 
     # ---- ИИ-сводка ----------------------------------------------------------
 
-    def ai_key(self, provider: str) -> str | None:
-        if provider == "ollama":
-            return "-"
-        return SEC.get("portfolio-check.ai", provider)
+    def ai_conf(self) -> "AI.AIConfig | None":
+        """Настройки ИИ + ключ из хранилища; None — ключа нет (ИИ выключен)."""
+        return AI.resolve(self.cfg.get("ai"))
 
     def run_ai(self, manual: bool = False) -> None:
-        cfg = self.cfg.get("ai") or {}
-        provider = cfg.get("provider", "openrouter"); key = self.ai_key(provider)
+        conf = self.ai_conf()
         items = getattr(self, "news_items", [])
         if not items:
             if manual:
                 self.set_status("Сначала должна загрузиться лента новостей.")
             return
-        if not key:
+        if conf is None:
             msg = "ИИ-сводка: ключ не задан — Настройки → ИИ."
             self.set_status(msg); self.ai_panel.setPlainText(msg); return
-        if getattr(self, "ai_worker", None) is not None and self.ai_worker.isRunning():
+        if is_running(getattr(self, "ai_worker", None)):
             return
-        self.btn_ai.setEnabled(False); self.set_status(f"ИИ-сводка ({provider})…")
+        self.btn_ai.setEnabled(False); self.set_status(f"ИИ-сводка ({conf.provider})…")
         for p in (self.ai_panel, self.ai_small):
             p.spinner.start("Модель читает новости — показана прошлая сводка")
         cands = (getattr(self, "_last_screen", None).ideas[:15] if getattr(self, "_last_screen", None) else [])
-        self.ai_worker = AIWorker(provider, key, cfg.get("model", ""), items, self.positions, cfg.get("proxy", ""), cfg.get("base_url", ""),
-                                  paths.data_dir() / "cache", float(cfg.get("min_interval_h", 6)), manual, cands)
+        self.ai_worker = AIWorker(conf, items, self.positions, paths.cache_dir(), manual, cands)
         self.ai_worker.done.connect(self._on_ai)
         self.ai_worker.failed.connect(lambda m: (log.error("ИИ-сводка: %s", m), self.btn_ai.setEnabled(True),
                                                  [p.spinner.stop() for p in (self.ai_panel, self.ai_small)],
@@ -152,7 +149,7 @@ class NewsMixin:
         for p in (self.ai_panel, self.ai_small):
             p.spinner.stop()
         self.ai_summary, self._ai_note = summary, note
-        AI.save_summary(summary, paths.data_dir() / "cache")
+        AI.save_summary(summary, paths.cache_dir())
         log.info("ИИ-сводка: %s/%s, бумаг %d, %s", summary.provider, summary.model, len(summary.items), note or "свежий запрос")
         self.set_status(f"ИИ-сводка {'из кэша' if note else 'готова'} ({summary.provider}).")
         self.render_ai()
@@ -163,7 +160,7 @@ class NewsMixin:
         QTimer.singleShot(0, lambda: self.run_exec(manual=force))
 
     def render_ai(self) -> None:
-        s = getattr(self, "ai_summary", None) or AI.load_summary(paths.data_dir() / "cache")
+        s = getattr(self, "ai_summary", None) or AI.load_summary(paths.cache_dir())
         if s is None:
             txt = "ИИ-сводка появится после загрузки новостей (Настройки → ИИ: провайдер и ключ)."
             self.ai_panel.setPlainText(txt); self.ai_small.setPlainText(txt); return

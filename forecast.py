@@ -177,11 +177,24 @@ def goal_year(rows: list[YearRow], target_monthly_real: float) -> int | None:
 
 
 from charts import LineChart
+from widgets import scroll_wrap
+import style as SY
 
 
 # ---------------------------------------------------------------------------
 # Вкладка
 # ---------------------------------------------------------------------------
+
+
+def _need_line(req: float | None, monthly: float, ty: int) -> str:
+    """«Чтобы успеть к ГГГГ, нужно/достаточно N ₽/мес — …» (одна фраза для плана и без плана)."""
+    if req is None:
+        return f"Цель к {ty} году недостижима при этих параметрах — сдвинь год или измени допущения."
+    if req <= monthly:
+        return (f"Чтобы успеть к {ty}, достаточно <b>{req:,.0f} ₽/мес</b> — "
+                + SY.span(f"можно вносить на {monthly - req:,.0f} ₽ меньше", SY.GOOD) + ".")
+    return (f"Чтобы успеть к {ty}, нужно <b>{req:,.0f} ₽/мес</b> — "
+            + SY.span(f"на {req - monthly:,.0f} ₽ больше, чем сейчас", SY.BAD) + ".")
 
 class ForecastTab(QWidget):
     paramsChanged = Signal(dict)
@@ -267,7 +280,7 @@ class ForecastTab(QWidget):
         form.addRow(self.btn_fix_plan)
         form.addRow(self.ed_plan)
 
-        self.lbl_hint = QLabel(); self.lbl_hint.setWordWrap(True); self.lbl_hint.setStyleSheet("color: #FF9F0A")
+        self.lbl_hint = QLabel(); self.lbl_hint.setWordWrap(True); self.lbl_hint.setStyleSheet(f"color: {SY.WARN}")
         form.addRow(self.lbl_hint)
 
         self.lbl_summary = QLabel(); self.lbl_summary.setWordWrap(True)
@@ -296,12 +309,12 @@ class ForecastTab(QWidget):
         charts = QWidget(); charts.setAutoFillBackground(True); charts.setBackgroundRole(QPalette.Base)
         cl = QVBoxLayout(charts); cl.setContentsMargins(8, 8, 8, 8)
         cl.addWidget(self.chart_income, 1); cl.addWidget(self.chart_capital, 1)
-        right.addTab(charts, "Графики"); right.addTab(self.table, "По годам")
+        right.addTab(scroll_wrap(charts), "Графики"); right.addTab(self.table, "По годам")
         right_w = QWidget(); rl = QVBoxLayout(right_w); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
         rl.addWidget(self.status_box); rl.addWidget(right, 1)
 
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(form_w); split.addWidget(right_w)
+        split.addWidget(scroll_wrap(form_w, base_background=False)); split.addWidget(right_w)   # форма длинная — прокрутка
         split.setStretchFactor(0, 0); split.setStretchFactor(1, 1)
         split.setSizes([380, 700])
         lay = QVBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(split)
@@ -432,14 +445,7 @@ class ForecastTab(QWidget):
         if anchor is None:
             req = required_contribution(p, ty)
             self.bar_goal.setValue(int(min(100, fact_inc / 12 / target * 100)) if target else 0)
-            if req is None:
-                need = f"Цель к {ty} году недостижима при этих параметрах — сдвинь год или измени допущения."
-            elif req <= p["monthly_contribution"]:
-                need = (f"Чтобы успеть к {ty}, достаточно <b>{req:,.0f} ₽/мес</b> — "
-                        f"<span style='color:#34C759'>можно вносить на {p['monthly_contribution'] - req:,.0f} ₽ меньше</span>.")
-            else:
-                need = (f"Чтобы успеть к {ty}, нужно <b>{req:,.0f} ₽/мес</b> — "
-                        f"<span style='color:#FF453A'>на {req - p['monthly_contribution']:,.0f} ₽ больше, чем сейчас</span>.")
+            need = _need_line(req, p["monthly_contribution"], ty)
             self.lbl_status.setText("План не зафиксирован — нажми «Зафиксировать план с сегодня», чтобы видеть опережение "
                                     "или отставание от графика.<br>" + need)
             self.ed_plan.setText("План не зафиксирован")
@@ -449,17 +455,10 @@ class ForecastTab(QWidget):
         self.ed_plan.setText(f"План от {d0.strftime('%d.%m.%Y')}: капитал {cap0:,.0f} ₽, доход {inc0:,.0f} ₽/год")
         self.bar_goal.setValue(int(st.progress_pct))
         ahead = st.ahead_rub >= 0
-        color = "#34C759" if ahead else "#FF453A"
+        color = SY.GOOD if ahead else SY.BAD
         word = "Опережение" if ahead else "Отставание"
         req = st.required_contribution
-        if req is None:
-            need = f"Цель к {ty} году недостижима при этих параметрах — сдвинь год или измени допущения."
-        elif req <= p["monthly_contribution"]:
-            need = (f"Чтобы успеть к {ty}, достаточно <b>{req:,.0f} ₽/мес</b> — "
-                    f"<span style='color:#34C759'>можно вносить на {p['monthly_contribution'] - req:,.0f} ₽ меньше</span>.")
-        else:
-            need = (f"Чтобы успеть к {ty}, нужно <b>{req:,.0f} ₽/мес</b> — "
-                    f"<span style='color:#FF453A'>на {req - p['monthly_contribution']:,.0f} ₽ больше, чем сейчас</span>.")
+        need = _need_line(req, p["monthly_contribution"], ty)
         now_line = (f"Сейчас: <b>{st.fact_income_m:,.0f} ₽/мес</b> из {target:,.0f} — это "
                     f"<b>{st.progress_pct:.0f}%</b> цели; капитал <b>{st.fact_capital:,.0f} ₽</b>.")
         if st.months_passed < 1:

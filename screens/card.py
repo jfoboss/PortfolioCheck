@@ -18,8 +18,10 @@ import history as H
 import news as NEWS
 import paths
 import portfolio_check as pc
+import style as SY
 from charts import LineChart
 from ui_common import MASK
+from widgets import is_running, stop_workers
 
 PERIOD_LABELS = {"day": "день", "week": "неделя", "month": "месяц", "year": "год"}
 
@@ -29,7 +31,7 @@ def card_data(win, ticker: str) -> dict:
     pos = next((p for p in win.positions if p.ticker == ticker), None)
     res = getattr(win, "_last_screen", None)
     idea = next((i for i in (getattr(res, "all_ideas", None) or getattr(res, "ideas", None) or []) if i.ticker == ticker), None)
-    cache = paths.data_dir() / "cache"
+    cache = paths.cache_dir()
     key = (pos.figi if pos and pos.figi else "") or (getattr(idea, "uid", "") if idea else "")
     series = H.load_cached(cache, key) if key else []
     cur = float(pos.cur_price) if pos else (float(idea.price) if idea else (series[-1][1] if series else 0.0))
@@ -71,7 +73,7 @@ class SecurityCard(QDialog):
         self.lbl_head = QLabel(); self.lbl_head.setTextFormat(Qt.RichText); self.lbl_head.setWordWrap(True)
         self.chart = LineChart("Цена, год", "", zero_based=False)
         self.info = QTextBrowser(); self.info.setOpenExternalLinks(True)
-        self.tbl_pay = win._table(["Отсечка", "Последний день покупки", "Выплата", "На бумагу", "Сумма, ₽", "Статус"])
+        self.tbl_pay = win._table(["Отсечка", "Посл. день покупки", "Выплата", "На бумагу", "Сумма, ₽", "Ст."])
         self.tbl_news = win._table(["Новость", "Когда", "Источник"])
         for t in (self.tbl_pay, self.tbl_news):
             t.setSortingEnabled(False)               # порядок задан: выплаты — от новых, новости — свежие сверху
@@ -92,7 +94,7 @@ class SecurityCard(QDialog):
         d = card_data(self.win, self.ticker)
         self._news = d["news"]
         priv = self.win.privacy
-        money = (lambda v: MASK) if priv else (lambda v: f"{v:,.0f}")
+        money = SY.money_fn(priv)
         pos, idea = d["pos"], d["idea"]
         chg = " · ".join(f"{PERIOD_LABELS[k]} {v:+.1f}%" for k, v in d["changes"].items() if v is not None and k in PERIOD_LABELS)
         where = "в портфеле" if pos else ("кандидат скринера" if idea else "нет в портфеле и среди кандидатов")
@@ -115,7 +117,7 @@ class SecurityCard(QDialog):
                      f"Количество {MASK if priv else f'{float(pos.quantity):,.0f}'} · средняя {float(pos.avg_price):,.2f} · "
                      f"стоимость {money(float(pos.value_rub))} ₽ · P/L {float(pos.pnl_pct):+.1f}%",
                      f"<br>Доля в портфеле <b>{r['share']:.1f}%</b>"
-                     + (f" (лимит на эмитента {r['single_max']:.0f}%" + (" — <b style='color:#FF453A'>превышен</b>)"
+                     + (f" (лимит на эмитента {r['single_max']:.0f}%" + (" — " + SY.span("превышен", SY.BAD, bold=True) + ")"
                         if r["single_max"] and r["share"] > r["single_max"] else ")") if r["single_max"] else ""),
                      f"<br>Класс «{cls}»: {r['class_share']:.1f}%"
                      + (f", коридор {lo:.0f}–{hi:.0f}%" if lo is not None else "")]
@@ -136,8 +138,7 @@ class SecurityCard(QDialog):
         pc_ = d["peers"]
         if pc_:
             fmtv = lambda v, f: "—" if v is None else f.format(v)
-            mark = {1: "<span style='color:#34C759'>▲ благоприятнее медианы</span>",
-                    -1: "<span style='color:#FF453A'>▼ хуже медианы</span>", 0: ""}
+            mark = {1: SY.span("▲ благоприятнее медианы", SY.GOOD), -1: SY.span("▼ хуже медианы", SY.BAD), 0: ""}
             peers = ", ".join(pc_["peers"][:8]) + (" …" if len(pc_["peers"]) > 8 else "")
             html += [f"<h3>Сравнение с отраслью «{pc_['sector']}»</h3>",
                      f"<span style='color:gray'>Медиана по {len(pc_['peers'])} бумагам отрасли из последнего прохода "
@@ -152,16 +153,18 @@ class SecurityCard(QDialog):
             html.append("<p style='color:gray'>Фундаментала нет: бумаги нет в кэше скринера (не TQBR или скринер ещё "
                         "не запускался — экран «Идеи» → «Найти»).</p>")
         if d["ai"]:
-            mark = {"positive": "▲ позитив", "negative": "▼ негатив"}.get(d["ai"].get("sentiment"), "■ нейтрально")
+            mark = SY.sentiment_label(d["ai"].get("sentiment"))
             html += ["<h3>ИИ по новостям</h3>", f"{mark}. {d['ai'].get('note', '')}",
                      "<br><span style='color:gray'>Оценка заголовков моделью, не рекомендация.</span>"]
         html += self._consensus_html(d)
         self.info.setHtml("".join(html) or "<p style='color:gray'>Данных о бумаге пока нет.</p>")
 
-        STATUS = {"declared": "объявлена", "expected": "ожидается*", "paid": "была"}
+        from screens.payouts import STATUS, STATUS_LEGEND
+        from widgets import icon_column
         rows = [([x.record_date, x.last_buy_date or "—", x.payment_date or "—", f"{x.per_share:,.2f}",
                   money(x.amount_rub), STATUS[x.status]], None) for x in reversed(d["payouts"])]
         self.win._fill(self.tbl_pay, rows)
+        icon_column(self.tbl_pay, 5, STATUS_LEGEND)
         self.win._fill(self.tbl_news, [([it.title, it.published.strftime("%d.%m %H:%M") if it.published else "",
                                          it.source], None) for it in d["news"][:50]])
 
@@ -176,7 +179,7 @@ class SecurityCard(QDialog):
         uid = self._forecast_uid(d)
         if not uid or uid.startswith("demo-") or paths.DEMO_DIR is not None:
             return []
-        cache = paths.data_dir() / "cache"
+        cache = paths.cache_dir()
         data = getattr(self, "_forecast", None) or CS.load(cache, uid)
         if data is None:
             self._start_forecast(uid, cache)
@@ -202,16 +205,14 @@ class SecurityCard(QDialog):
         from ui_common import get_token
         from workers import ForecastWorker
         token = get_token()
-        if not token or (getattr(self, "_fw", None) is not None and self._fw.isRunning()):
+        if not token or is_running(getattr(self, "_fw", None)):
             return
         self._fw = ForecastWorker(token, uid, cache, self)
         self._fw.done.connect(lambda data: (setattr(self, "_forecast", data), self.refresh()))
         self._fw.start()
 
     def closeEvent(self, e) -> None:
-        fw = getattr(self, "_fw", None)
-        if fw is not None and fw.isRunning():
-            fw.wait(15000)                           # не уничтожать живой поток (SIGABRT)
+        stop_workers([getattr(self, "_fw", None)], 15000, interrupt=False)     # не уничтожать живой поток (SIGABRT)
         super().closeEvent(e)
 
     def _open_news(self, r: int, _c: int) -> None:

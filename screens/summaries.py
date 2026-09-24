@@ -14,6 +14,7 @@ import ai as AI
 from diagnostics import log
 from ui_common import mask_text
 from workers import ExecWorker
+from widgets import is_running
 
 
 class ExecSummaryMixin:
@@ -102,21 +103,19 @@ class ExecSummaryMixin:
         return "\n".join(lines)
 
     def run_exec(self, manual: bool = False) -> None:
-        cfg = self.cfg.get("ai") or {}
-        provider = cfg.get("provider", "openrouter"); key = self.ai_key(provider)
-        if not key or not self.positions:
+        conf = self.ai_conf()
+        if conf is None or not self.positions:
             if manual:
                 self.set_status("ИИ-сводки: нужен ключ (Настройки → ИИ) и загруженный портфель.")
             return
-        if getattr(self, "exec_worker", None) is not None and self.exec_worker.isRunning():
+        if is_running(getattr(self, "exec_worker", None)):
             return
         jobs = [("overview", self._facts_overview()), ("portfolio", self._facts_portfolio()),
                 ("market", self._facts_market()), ("strategy", self._facts_strategy())]
         for kind, _ in jobs:
             self.exec_panels[kind].spinner.start("Модель готовит сводку — показана прошлая")
-        self.set_status(f"ИИ-сводки по экранам ({provider})… показаны прошлые")
-        self.exec_worker = ExecWorker(provider, key, cfg.get("model", ""), cfg.get("proxy", ""), cfg.get("base_url", ""), jobs,
-                                      paths.data_dir() / "cache", float(cfg.get("min_interval_h", 6)), manual)
+        self.set_status(f"ИИ-сводки по экранам ({conf.provider})… показаны прошлые")
+        self.exec_worker = ExecWorker(conf, jobs, paths.cache_dir(), manual)
         self.exec_worker.one.connect(self._on_exec_one)
         self.exec_worker.failed.connect(lambda m: (log.error("ИИ-сводка экрана: %s", m), self.set_status(f"ИИ-сводка: {m[:120]}"),
                                                    [p.spinner.stop() for p in self.exec_panels.values()]))
@@ -127,13 +126,12 @@ class ExecSummaryMixin:
     def _on_exec_one(self, result) -> None:
         s, note = result if isinstance(result, tuple) else (result, "")
         self.exec_panels[s.kind].spinner.stop()
-        AI.save_exec(s, paths.data_dir() / "cache")
+        AI.save_exec(s, paths.cache_dir())
         self.exec_panels[s.kind].setHtml(AI.render_exec_html(s, mask_text if self.privacy else None, note))
 
     def ai_enabled(self) -> bool:
         """Есть ли чем делать сводки: провайдер с ключом (или Ollama)."""
-        cfg = self.cfg.get("ai") or {}
-        return bool(self.ai_key(cfg.get("provider", "openrouter")))
+        return self.ai_conf() is not None
 
     def update_ai_visibility(self) -> None:
         """Без ключа ИИ-панели и кнопка спрятаны — вместо пустых мест."""
@@ -146,6 +144,6 @@ class ExecSummaryMixin:
 
     def render_exec_cached(self) -> None:
         for kind, panel in self.exec_panels.items():
-            s = AI.load_exec(kind, paths.data_dir() / "cache")
+            s = AI.load_exec(kind, paths.cache_dir())
             if s:
                 panel.setHtml(AI.render_exec_html(s, mask_text if self.privacy else None))

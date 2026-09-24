@@ -43,7 +43,7 @@ def test_card_shows_cached_consensus(window, demo_positions, isolated_home):
     import paths
     window.on_loaded((demo_positions, None, None, []))
     sber = next(p for p in demo_positions if p.ticker == "SBERP")
-    CS.cache_path(paths.data_dir() / "cache", sber.figi).write_text(json.dumps({
+    CS.cache_path(paths.cache_dir(), sber.figi).write_text(json.dumps({
         "consensus": {"recommendation": "нейтральный взгляд", "current": 300.0, "target": 330.0, "min": 310.0,
                       "max": 350.0, "change_rel": 10.0, "currency": "rub"}, "targets": []}), encoding="utf-8")
     window.open_card("SBERP")

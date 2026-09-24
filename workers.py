@@ -13,6 +13,7 @@ import history as H
 import ai as AI
 import news as NEWS
 import screener as SCR
+import style as SY
 
 
 class FairPriceWorker(QThread):
@@ -28,7 +29,7 @@ class FairPriceWorker(QThread):
         try:
             self.done.emit(pc.refresh_fair_prices(self.token, self.cfg, self.positions))
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {e}")
+            self.failed.emit(SY.err_text(e, 0))
 
 
 class HistoryWorker(QThread):
@@ -42,10 +43,8 @@ class HistoryWorker(QThread):
 
     def run(self) -> None:
         try:
-            Client, *_ = pc._sdk()
-            pc._setup_grpc_roots()
             candles: dict[str, list] = {}
-            with Client(self.token) as client:
+            with pc.connect(self.token) as client:
                 fx = {k: float(v) for k, v in pc.fetch_fx(client, self.cfg.get("fx_fallback", {})).items()}
                 for p in self.positions:
                     if self.isInterruptionRequested():
@@ -57,7 +56,7 @@ class HistoryWorker(QThread):
             hist = H.backfilled_history(self.positions, candles, fx)
             self.done.emit((changes, hist, empty))
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {e}")
+            self.failed.emit(SY.err_text(e, 0))
 
 
 class NewsWorker(QThread):
@@ -83,10 +82,9 @@ class LongHistoryWorker(QThread):
 
     def run(self) -> None:
         try:
-            Client, *_ = pc._sdk(); pc._setup_grpc_roots()
             out, covered, missing = {}, [], 0
             days = int(self.years * 365) + 30
-            with Client(self.token) as client:
+            with pc.connect(self.token) as client:
                 for i, p in enumerate(self.positions):
                     if self.isInterruptionRequested():
                         return
@@ -101,7 +99,7 @@ class LongHistoryWorker(QThread):
                         out[p.figi] = val; covered.append(cov)
             self.done.emit((out, (sum(covered) / len(covered)) if covered else 0.0, missing))
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
+            self.failed.emit(SY.err_text(e, 200))
 
 
 class IdeasEnrichWorker(QThread):
@@ -115,9 +113,8 @@ class IdeasEnrichWorker(QThread):
 
     def run(self) -> None:
         try:
-            Client, *_ = pc._sdk(); pc._setup_grpc_roots()
             out = {}
-            with Client(self.token) as client:
+            with pc.connect(self.token) as client:
                 for idea in self.ideas[:self.limit]:
                     if self.isInterruptionRequested():
                         return
@@ -127,7 +124,7 @@ class IdeasEnrichWorker(QThread):
                     out[idea.ticker] = H.period_changes(series, idea.price).get("month")
             self.done.emit(out)
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
+            self.failed.emit(SY.err_text(e, 200))
 
 
 class ScreenerWorker(QThread):
@@ -151,34 +148,35 @@ class ScreenerWorker(QThread):
                              cache_dir=self.cache_dir, cache_hours=0 if self.force else 24, filters=self.filters)
             self.done.emit(res)
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {e}")
+            self.failed.emit(SY.err_text(e, 0))
 
 
 class AIWorker(QThread):
     done = Signal(object)      # (Summary, note)
     failed = Signal(str)
 
-    def __init__(self, provider, key, model, news_items, positions, proxy, base_url, cache_dir, min_interval_h, force, candidates=None):
+    def __init__(self, conf: "AI.AIConfig", news_items, positions, cache_dir, force, candidates=None):
         super().__init__()
-        self.args = (provider, key, model, news_items, positions, proxy, base_url)
-        self.cache_dir, self.min_interval_h, self.force, self.candidates = cache_dir, min_interval_h, force, candidates or []
+        self.conf, self.news_items, self.positions = conf, news_items, positions
+        self.cache_dir, self.force, self.candidates = cache_dir, force, candidates or []
 
     def run(self) -> None:
-        provider, key, model, news_items, positions, proxy, base_url = self.args
+        c = self.conf
         cache = AI.ResponseCache(self.cache_dir)
-        fp = AI.news_fingerprint(news_items, provider, model, self.candidates)
-        subj = AI.subjects_fingerprint(positions, self.candidates)
-        hit, why = cache.get("news", fp, self.min_interval_h, self.force, subj)
+        fp = AI.news_fingerprint(self.news_items, c.provider, c.model, self.candidates)
+        subj = AI.subjects_fingerprint(self.positions, self.candidates)
+        hit, why = cache.get("news", fp, c.min_interval_h, self.force, subj)
         if hit:
             self.done.emit((AI.Summary(**hit), f"из кэша: {why}")); return
         try:
-            s = AI.summarize(*self.args, candidates=self.candidates)
+            s = AI.summarize(c.provider, c.key, c.model, self.news_items, self.positions, c.proxy, c.base_url,
+                             candidates=self.candidates)
             cache.put("news", fp, __import__("dataclasses").asdict(s), subj)
             self.done.emit((s, ""))
         except AI.RateLimited as e:
             self.failed.emit(str(e))
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {str(e)[:300]}")
+            self.failed.emit(SY.err_text(e, 300))
 
 
 class ExecWorker(QThread):
@@ -187,25 +185,25 @@ class ExecWorker(QThread):
     failed = Signal(str)
     done = Signal()
 
-    def __init__(self, provider, key, model, proxy, base_url, jobs: list, cache_dir, min_interval_h, force):
+    def __init__(self, conf: "AI.AIConfig", jobs: list, cache_dir, force):
         super().__init__()
-        self.provider, self.key, self.model, self.proxy, self.base_url, self.jobs = provider, key, model, proxy, base_url, jobs
-        self.cache_dir, self.min_interval_h, self.force = cache_dir, min_interval_h, force
+        self.conf, self.jobs, self.cache_dir, self.force = conf, jobs, cache_dir, force
 
     def run(self) -> None:
         """Сначала всё, что есть в кэше; устаревшие экраны — ОДНИМ запросом (лимиты считаются в запросах)."""
         cache = AI.ResponseCache(self.cache_dir)
         todo, fps = [], {}
         for kind, facts in self.jobs:
-            fp = AI.exec_fingerprint(kind, facts, self.provider, self.model); fps[kind] = fp
-            hit, why = cache.get(f"exec_{kind}", fp, self.min_interval_h, self.force)
+            fp = AI.exec_fingerprint(kind, facts, self.conf.provider, self.conf.model); fps[kind] = fp
+            hit, why = cache.get(f"exec_{kind}", fp, self.conf.min_interval_h, self.force)
             if hit:
                 self.one.emit((AI.ExecSummary(**hit), f"из кэша: {why}"))
             else:
                 todo.append((kind, facts))
         if todo and not self.isInterruptionRequested():
             try:
-                got = AI.exec_summary_batch(todo, self.provider, self.key, self.model, self.proxy, self.base_url)
+                c = self.conf
+                got = AI.exec_summary_batch(todo, c.provider, c.key, c.model, c.proxy, c.base_url)
                 for s in got:
                     cache.put(f"exec_{s.kind}", fps[s.kind], __import__("dataclasses").asdict(s))
                     self.one.emit((s, ""))
@@ -215,7 +213,7 @@ class ExecWorker(QThread):
             except AI.RateLimited as e:
                 self.failed.emit(str(e))
             except Exception as e:  # noqa: BLE001
-                self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
+                self.failed.emit(SY.err_text(e, 200))
         self.done.emit()
 
 
@@ -231,7 +229,7 @@ class LoadWorker(QThread):
         try:
             self.done.emit(pc.load_portfolio_full(self.token, self.cfg))
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {e}")
+            self.failed.emit(SY.err_text(e, 0))
 
 
 class FactorsWorker(QThread):
@@ -251,7 +249,7 @@ class FactorsWorker(QThread):
             status["calendar"] = macro.fetch_calendar(self.cache_dir)
             self.done.emit(status)
         except Exception as e:  # noqa: BLE001
-            self.done.emit({"ошибка": f"{type(e).__name__}: {e}"})
+            self.done.emit({"ошибка": SY.err_text(e, 0)})
 
 
 class ForecastWorker(QThread):
@@ -267,4 +265,4 @@ class ForecastWorker(QThread):
         try:
             self.done.emit(CS.fetch(self.token, self.uid, self.cache_dir))
         except Exception as e:  # noqa: BLE001
-            self.done.emit({"error": f"{type(e).__name__}: {str(e)[:160]}"})
+            self.done.emit({"error": SY.err_text(e, 160)})

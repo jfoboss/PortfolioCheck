@@ -14,6 +14,8 @@ import history as H
 from diagnostics import log
 from ui_common import get_token
 from workers import HistoryWorker, LongHistoryWorker
+import style as SY
+from widgets import is_running
 
 
 class HistoryMixin:
@@ -23,9 +25,9 @@ class HistoryMixin:
         token = get_token()
         if not token or not self.bundle_path().exists() or not self.positions:
             self.pipeline_step("history", "новости"); self.refresh_news(); return
-        if getattr(self, "hist_worker", None) is not None and self.hist_worker.isRunning():
+        if is_running(getattr(self, "hist_worker", None)):
             return
-        self.hist_worker = HistoryWorker(token, self.cfg, self.positions, paths.data_dir() / "cache")
+        self.hist_worker = HistoryWorker(token, self.cfg, self.positions, paths.cache_dir())
         self.hist_worker.done.connect(self._on_history)
         self.hist_worker.failed.connect(lambda m: (log.error("история/свечи: %s", m), self.set_status(f"История не загружена: {m[:100]}"),
                                                    self.pipeline_step("history", "новости"), self.refresh_news()))
@@ -97,7 +99,7 @@ class HistoryMixin:
 
     def long_growth_from_cache(self, years: float) -> tuple[dict, float, int]:
         """CAGR по позициям из уже сохранённых свечей — мгновенно, без сети."""
-        cache_dir = paths.data_dir() / "cache"
+        cache_dir = paths.cache_dir()
         vals, covered, missing = {}, [], 0
         for p in self.positions:
             if not p.figi:
@@ -128,10 +130,10 @@ class HistoryMixin:
         token = get_token()
         if not token or not self.positions:
             self.set_status("Для средней за несколько лет нужны токен и загруженный портфель."); return
-        if getattr(self, "long_worker", None) is not None and self.long_worker.isRunning():
+        if is_running(getattr(self, "long_worker", None)):
             return
         self.set_status(f"Загружаю историю за {years:.0f} г…")
-        self.long_worker = LongHistoryWorker(token, self.cfg, self.positions, paths.data_dir() / "cache", years)
+        self.long_worker = LongHistoryWorker(token, self.cfg, self.positions, paths.cache_dir(), years)
         self.long_worker.progress.connect(self.set_status)
         self.long_worker.done.connect(lambda r: self._on_long_history(r, years))
         self.long_worker.failed.connect(lambda m: (log.error("длинная история: %s", m), self.set_status(f"История не загружена: {m[:100]}")))
@@ -172,22 +174,20 @@ class HistoryMixin:
             vals = [(v, c) for v, c in vals if c is not None]
             w = sum(v for v, _ in vals)
             return (sum(v * c for v, c in vals) / w) if w else None
-        def col(v):
-            return "#34C759" if v > 0 else ("#FF453A" if v < 0 else "gray")
         v, s = self.kpi["total"]; v.setText(f"{self.rub(total)} ₽"); s.setText(f"{len(self.positions)} позиций")
         for key in ("day", "month"):
             pct = weighted(key); v, s = self.kpi[key]
             if pct is None:
                 v.setText("—"); s.setText("свечи грузятся")
             else:
-                v.setText(f"{pct:+.2f}%"); v.setStyleSheet(f"font-size: 18px; font-weight: 600; color: {col(pct)}")
+                v.setText(f"{pct:+.2f}%"); v.setStyleSheet(f"{SY.KPI_CSS}; color: {SY.sign_color(pct)}")
                 s.setText(f"≈ {self.rub(total * Decimal(str(pct)) / 100)} ₽")
         fx = {k.upper(): Decimal(str(x)) for k, x in (self.cfg.get("fx_fallback") or {}).items()}
         inc = sum(p.div_12m * p.quantity * fx.get(p.currency, Decimal(1)) for p in self.positions if p.div_12m > 0)
         v, s = self.kpi["income"]; v.setText(f"{self.rub(inc)} ₽")
         s.setText(f"{float(inc / total * 100):.1f}% к портфелю, {self.rub(inc / 12)} ₽/мес" if total else "")
         n = getattr(self, "_last_alerts", 0); v, s = self.kpi["signals"]
-        v.setText(str(n)); v.setStyleSheet(f"font-size: 18px; font-weight: 600; color: {'#FF9F0A' if n else '#34C759'}")
+        v.setText(str(n)); v.setStyleSheet(f"{SY.KPI_CSS}; color: {SY.WARN if n else SY.GOOD}")
         s.setText("требуют внимания" if n else "всё по правилам")
         try:
             import forecast as F

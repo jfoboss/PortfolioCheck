@@ -5,15 +5,16 @@ factors.py — рыночные факторы для сценариев (BACKLO
            эндпоинт истории индекса работает, в отличие от убранного /securities/{t}/dividends);
   USDRUB — официальный курс ЦБ: /scripts/XML_dynamic.asp (без токена).
 Ряды кэшируются как свечи — cache/candles_IMOEX.json, cache/candles_USDRUB.json — и догружаются не чаще раза в сутки.
-Сеть — только из воркера (FactorsWorker). Сайты — с системными корнями TLS, как RSS (news._fetch).
+Сеть — только из воркера (FactorsWorker). Сайты — через net.fetch (корни ОС).
 """
 from __future__ import annotations
 
 import json
 import re
-import time
 from datetime import date, timedelta
 from pathlib import Path
+import style as SY
+import jsoncache as JC
 
 IMOEX, USDRUB = "IMOEX", "USDRUB"
 ISS_URL = ("https://iss.moex.com/iss/history/engines/stock/markets/index/securities/IMOEX.json"
@@ -43,28 +44,23 @@ def parse_cbr(payload: bytes) -> list[tuple[str, float]]:
     return sorted(out)
 
 
-def _cache(cache_dir: Path, key: str) -> Path:
-    return cache_dir / f"candles_{key}.json"
-
-
 def load(cache_dir: Path, key: str) -> list[tuple[str, float]]:
-    try:
-        return [(d, float(c)) for d, c in json.loads(_cache(cache_dir, key).read_text(encoding="utf-8"))]
-    except Exception:  # noqa: BLE001
-        return []
+    """Ряд фактора — в том же формате, что свечи бумаг (history.load_cached)."""
+    import history as H
+    return H.load_cached(cache_dir, key)
 
 
 def fresh(cache_dir: Path, key: str) -> bool:
-    f = _cache(cache_dir, key)
-    return f.exists() and time.time() - f.stat().st_mtime < MAX_AGE_S
+    return JC.fresh(cache_dir / f"candles_{key}.json", MAX_AGE_S)
 
 
 def fetch_all(cache_dir: Path, days: int = 400, fetch=None, today: date | None = None) -> dict[str, str]:
-    """Догрузить оба ряда (если кэш старше суток). fetch(url) → bytes; по умолчанию news._fetch (системные корни).
+    """Догрузить оба ряда (если кэш старше суток). fetch(url) → bytes; по умолчанию net.fetch (корни ОС).
     Возвращает {ключ: "ok" | текст ошибки} — ошибка одного ряда не мешает другому."""
     if fetch is None:
-        import news
-        fetch = news._fetch
+        import net
+        fetch = net.fetch
+    import history as H
     today = today or date.today()
     frm = today - timedelta(days=days)
     status = {}
@@ -78,16 +74,16 @@ def fetch_all(cache_dir: Path, days: int = 400, fetch=None, today: date | None =
                     break
                 start += len(page)
             if rows:
-                _cache(cache_dir, IMOEX).write_text(json.dumps(sorted(dict(rows).items())), encoding="utf-8")
+                H.save_series(cache_dir, IMOEX, sorted(dict(rows).items()))
             status[IMOEX] = "ok" if rows else "пустой ответ"
         except Exception as e:  # noqa: BLE001
-            status[IMOEX] = f"{type(e).__name__}: {str(e)[:120]}"
+            status[IMOEX] = SY.err_text(e, 120)
     if not fresh(cache_dir, USDRUB):
         try:
             rows = parse_cbr(fetch(CBR_URL.format(frm=f"{frm:%d/%m/%Y}", till=f"{today:%d/%m/%Y}")))
             if rows:
-                _cache(cache_dir, USDRUB).write_text(json.dumps(rows), encoding="utf-8")
+                H.save_series(cache_dir, USDRUB, rows)
             status[USDRUB] = "ok" if rows else "пустой ответ"
         except Exception as e:  # noqa: BLE001
-            status[USDRUB] = f"{type(e).__name__}: {str(e)[:120]}"
+            status[USDRUB] = SY.err_text(e, 120)
     return status

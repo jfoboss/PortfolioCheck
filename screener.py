@@ -72,9 +72,8 @@ def fetch_all(token: str, progress=None) -> tuple[list[Idea], dict]:
     import portfolio_check as pc
     from tinkoff.invest.schemas import GetAssetFundamentalsRequest, InstrumentStatus
     from tinkoff.invest.utils import quotation_to_decimal
-    Client, *_ = pc._sdk(); pc._setup_grpc_roots()
     stats = {"errors": 0, "last_error": ""}
-    with Client(token) as client:
+    with pc.connect(token) as client:
         shares = client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE).instruments
         universe = [s for s in shares if s.class_code == "TQBR" and s.currency == "rub" and s.asset_uid]
         stats["universe"] = len(universe)

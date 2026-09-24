@@ -4,22 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWizard, QWizardPage, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QButtonGroup, QFormLayout,
     QDoubleSpinBox, QSpinBox, QPushButton, QFileDialog, QMessageBox, QGridLayout,
 )
 
 import strategy as ST
+import style as SY
 from portfolio_check import CLASS_LABELS
+from widgets import note
 
 
 def _note(text: str, gray: bool = False) -> QLabel:
-    l = QLabel(text); l.setWordWrap(True); l.setTextFormat(Qt.RichText); l.setOpenExternalLinks(True)
-    l.setTextInteractionFlags(Qt.TextBrowserInteraction)
-    if gray:
-        l.setStyleSheet("color: gray")
-    return l
+    return note(text, gray=gray, rich=True)
 
 
 class SetupWizard(QWizard):
@@ -134,8 +131,8 @@ class SetupWizard(QWizard):
         maxs = sum(hi.value() for _, hi in self.tgt_spins.values())
         ok = mins <= 100 <= maxs or maxs == 0
         self.lbl_sum.setText(f"Сумма минимумов {mins:.0f}%, сумма максимумов {maxs:.0f}% — "
-                             + ("коридоры совместимы." if ok else "<span style='color:#FF453A'>коридоры не сходятся: "
-                                "100% должно быть между суммой минимумов и максимумов.</span>"))
+                             + ("коридоры совместимы." if ok else SY.span("коридоры не сходятся: 100% должно быть "
+                                                                         "между суммой минимумов и максимумов.", SY.BAD)))
 
     # ---- 4. Правила ----
     def _page_rules(self) -> QWizardPage:

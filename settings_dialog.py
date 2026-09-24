@@ -29,6 +29,9 @@ TARGET_CLASSES = ["gold", "real_estate", "real_estate_wh", "real_estate_other",
                   "equity_core", "equity_spec", "ballast", "foreign"]
 TARGET_LABELS = CLASS_LABELS
 
+from ai import KEY_SERVICE as AI_KEY_SERVICE   # один источник имени — ai.py
+import style as SY
+from widgets import is_running, note, stop_workers
 KEYRING_SERVICE = "portfolio-check.tinkoff"
 KEYRING_USER = "invest-api-token"
 INVEST_HOST = "invest-public-api.tinkoff.ru"
@@ -84,17 +87,8 @@ def _plus_minus(table: QTableWidget, on_add, on_change) -> QHBoxLayout:
 
 
 def _note(text: str, gray: bool = False, rich: bool = False) -> QLabel:
-    """Многострочная подсказка: переносится по ширине окна и не тянет окно вширь
-    (QLabel с wordWrap в QFormLayout иначе требует ширину под всю строку)."""
-    l = QLabel(text)
-    l.setWordWrap(True)
-    l.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-    l.setMinimumWidth(200)
-    if gray:
-        l.setStyleSheet("color: gray")
-    if rich:
-        l.setTextFormat(Qt.RichText); l.setOpenExternalLinks(True); l.setTextInteractionFlags(Qt.TextBrowserInteraction)
-    return l
+    """Подсказка в форме настроек: переносится и не тянет окно вширь (widgets.note с ignore_width)."""
+    return note(text, gray=gray, rich=rich, ignore_width=True)
 
 
 def _cell(text, editable: bool = True) -> QTableWidgetItem:
@@ -167,6 +161,41 @@ def server_chain(host: str, port: int = 443, timeout: int = 20) -> list[tuple[st
 # Окно настроек
 # ---------------------------------------------------------------------------
 
+def _compact(page: QWidget) -> None:
+    """Страница настроек не шире ~700 px на любой ОС: в формах длинная подпись переносится над полем; числовые поля
+    и списки не требуют ширины под самое длинное значение (на Windows поле суммы с большим максимумом просило
+    ~500 px, и страница «Правила» уходила за 1000 px)."""
+    from PySide6.QtWidgets import QAbstractSpinBox
+    for form in page.findChildren(QFormLayout):
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    for sb in page.findChildren(QAbstractSpinBox):
+        sb.setMinimumWidth(min(sb.minimumSizeHint().width(), 160))
+    for cb in page.findChildren(QComboBox):
+        cb.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        cb.setMinimumContentsLength(min(cb.minimumContentsLength() or 18, 24))
+
+
+def _set_check_mark(item, ok: bool, msg: str = "") -> None:
+    """✓/✗ с цветом в ячейке таблицы источников (полный текст — в подсказке)."""
+    mark, color = SY.ok_mark(ok)
+    item.setText(mark + (f" {msg[:30] if ok else short_error(msg)}" if msg else ""))
+    item.setForeground(QColor(color)); item.setToolTip(msg)
+
+
+def short_error(msg: str) -> str:
+    """Ошибка загрузки ленты → пара слов для узкой колонки; полный текст — в подсказке."""
+    m = msg.lower()
+    for key, text in (("certificate_verify_failed", "сертификат не прошёл проверку"), ("ssl", "ошибка TLS"),
+                      ("timed out", "нет ответа"), ("timeout", "нет ответа"), ("403", "доступ запрещён (403)"),
+                      ("404", "адрес не найден (404)"), ("name or service", "сайт не найден (DNS)"),
+                      ("nodename", "сайт не найден (DNS)"), ("getaddrinfo", "сайт не найден (DNS)"),
+                      ("refused", "соединение отклонено"), ("новостей: 0", "лента пустая")):
+        if key in m:
+            return text
+    return msg[:30] + ("…" if len(msg) > 30 else "")
+
+
 class FeedCheckWorker(QThread):
     """Параллельная проверка RSS-источников: сигнал по каждому, как только он ответил."""
     one = Signal(str, bool, str)
@@ -188,7 +217,7 @@ class FeedCheckWorker(QThread):
                 try:
                     ok, msg = f.result()
                 except Exception as e:  # noqa: BLE001
-                    ok, msg = False, f"{type(e).__name__}: {str(e)[:80]}"
+                    ok, msg = False, SY.err_text(e, 80)
                 self.one.emit(url, ok, msg)
         self.done.emit()
 
@@ -207,7 +236,7 @@ class ModelsWorker(QThread):
             models, src = AI.fetch_openrouter_models(self.cache_dir, self.proxy, force=self.force)
             self.done.emit(models, src)
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {str(e)[:150]}")
+            self.failed.emit(SY.err_text(e, 150))
 
 
 class AutoHeightLabel(QLabel):
@@ -254,17 +283,17 @@ class CheckWorker(QThread):
     done = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, provider: str, key: str, model: str, proxy: str, base_url: str, cache_dir, parent=None):
+    def __init__(self, conf, cache_dir, parent=None):
         super().__init__(parent)             # родитель держит поток живым, даже если окно настроек отпустили
-        self.args = (provider, key, model, proxy, base_url)
-        self.cache_dir = cache_dir
+        self.conf, self.cache_dir = conf, cache_dir
 
     def run(self) -> None:
         import ai as AI
+        c = self.conf
         try:
-            self.done.emit(AI.check_model(*self.args, cache_dir=self.cache_dir))
+            self.done.emit(AI.check_model(c.provider, c.key, c.model, c.proxy, c.base_url, cache_dir=self.cache_dir))
         except Exception as e:  # noqa: BLE001
-            self.failed.emit(f"{type(e).__name__}: {str(e)[:200]}")
+            self.failed.emit(SY.err_text(e, 200))
 
 
 class ModelPicker(QWidget):
@@ -290,7 +319,7 @@ class ModelPicker(QWidget):
         self.form = None                 # строки каталога живут в форме настроек отдельными строками
         self.cb_free.toggled.connect(self._fill)
         self.b_reload = QPushButton("Обновить список"); self.b_reload.setToolTip("Загрузить свежий каталог моделей OpenRouter")
-        self.lbl = QLabel(); self.lbl.setStyleSheet("color: gray")
+        self.lbl = QLabel(); self.lbl.setStyleSheet("color: gray"); self.lbl.setWordWrap(True)   # не распирает окно
         row.addWidget(self.cb_free); row.addWidget(self.b_reload); row.addWidget(self.lbl, 1)
         self.catalog_row = QWidget(); self.catalog_row.setLayout(row)
         lay.addWidget(self.combo)
@@ -367,8 +396,8 @@ class ModelPicker(QWidget):
             if not self.models or not mid:
                 self.why.setText(prefix); return
             rec = next((x["id"] for x in self.models if x["free"] and x["recommended"]), "")
-            self.why.setText("<span style='color:#FF9F0A'>Этой модели сейчас нет в каталоге OpenRouter — бесплатные версии "
-                             "снимают без предупреждения.</span>" + (f" Например, подойдёт <code>{rec}</code> ★." if rec else ""))
+            self.why.setText(SY.span("Этой модели сейчас нет в каталоге OpenRouter — бесплатные версии снимают без "
+                                     "предупреждения.", SY.WARN) + (f" Например, подойдёт <code>{rec}</code> ★." if rec else ""))
             return
         self.why.setText(prefix + ("★ Рекомендуется: " if m["recommended"] else "") + (m["why"] or ""))
 
@@ -410,9 +439,28 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._tab_ai(), "ИИ")
         self.tabs.addTab(self._tab_access(), "Доступ")
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.tabs)
+        # Разделы — списком слева, как в системных настройках macOS. Строка из 12 вкладок на macOS не прокручивается
+        # и распирала окно шире экрана MacBook. QTabWidget остаётся (без своей строки): settings_win.tabs.setCurrentIndex
+        # и палитра команд работают как раньше. Страницы — в прокрутке: высокая страница не растягивает окно.
+        from PySide6.QtWidgets import QFrame, QListWidget, QScrollArea
+        pages = [(self.tabs.widget(i), self.tabs.tabText(i)) for i in range(self.tabs.count())]
+        for page, _ in pages:
+            _compact(page)
+        self.tabs.clear()
+        for page, name in pages:
+            sa = QScrollArea(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.NoFrame); sa.setWidget(page)
+            self.tabs.addTab(sa, name)
+        self.tabs.tabBar().hide()
+        self.tabs.setDocumentMode(True)
+        self.nav = QListWidget(); self.nav.setObjectName("settings_nav")
+        self.nav.addItems([self.tabs.tabText(i) for i in range(self.tabs.count())])
+        self.nav.setFixedWidth(self.nav.sizeHintForColumn(0) + 36)
+        self.nav.currentRowChanged.connect(self.tabs.setCurrentIndex)
+        self.tabs.currentChanged.connect(lambda i: self.nav.currentRow() != i and self.nav.setCurrentRow(i))
+        self.nav.setCurrentRow(0)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(8, 8, 0, 0)
+        lay.addWidget(self.nav); lay.addWidget(self.tabs, 1)
         self._loading = False
 
     # ---- автосохранение -----------------------------------------------------
@@ -440,7 +488,8 @@ class SettingsDialog(QDialog):
         w = QWidget(); form = QFormLayout(w); form.setContentsMargins(20, 16, 20, 16)
         form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         rf = self.cfg.get("refresh", {})
-        self.cb_on_launch = QCheckBox("При запуске обновлять из API, если данные на диске старше интервала (иначе показать сохранённые)")
+        self.cb_on_launch = QCheckBox("Обновлять при запуске, если данные старше интервала")
+        self.cb_on_launch.setToolTip("Иначе при запуске показываются сохранённые на диске данные, а обновление — по кнопке или по расписанию")
         self.cb_on_launch.setChecked(bool(rf.get("on_launch", True)))
         self.cb_on_launch.toggled.connect(self._touch)
         self.cmb_interval = QComboBox()
@@ -448,10 +497,11 @@ class SettingsDialog(QDialog):
             self.cmb_interval.addItem(label, minutes)
         self.cmb_interval.setCurrentIndex(max(0, self.cmb_interval.findData(int(rf.get("interval_min", 60)))))
         self.cmb_interval.currentIndexChanged.connect(self._touch)
-        self.cb_privacy = QCheckBox("Запускать со скрытыми суммами (проценты и названия видны, суммы — нет)")
+        self.cb_privacy = QCheckBox("Запускать со скрытыми суммами")
+        self.cb_privacy.setToolTip("Проценты и названия видны, суммы — нет")
         self.cb_privacy.setChecked(bool(rf.get("privacy_on_launch", True)))
         self.cb_privacy.toggled.connect(self._touch)
-        self.cb_notify = QCheckBox("Показывать уведомление, если после обновления появились сигналы")
+        self.cb_notify = QCheckBox("Уведомлять о новых сигналах после обновления")
         self.cb_notify.setChecked(bool(rf.get("notify", True)))
         self.cb_notify.toggled.connect(self._touch)
         form.addRow(self.cb_on_launch)
@@ -476,15 +526,16 @@ class SettingsDialog(QDialog):
         b_prm.clicked.connect(lambda: __import__("strategy").copy_prompt_to_clipboard(self))
         row_s.addWidget(b_exp); row_s.addWidget(b_imp); row_s.addWidget(b_prm); row_s.addStretch()
         form.addRow(row_s)
-        self.cb_auto_cls = QCheckBox("Автоматически классифицировать новые бумаги (акции → ядро, золото → металлы, ЗПИФ → недвижимость)")
+        self.cb_auto_cls = QCheckBox("Классифицировать новые бумаги автоматически")
+        self.cb_auto_cls.setToolTip("Акции → ядро, золото → металлы, ЗПИФ → недвижимость; поправить можно в «Инструментах»")
         self.cb_auto_cls.setChecked(bool(self.cfg.get("auto_classify", True))); self.cb_auto_cls.toggled.connect(self._touch)
         form.addRow(self.cb_auto_cls)
 
         # ---- хранилище настроек ----
         form.addRow(QLabel("<b>Где хранить настройки и снапшоты</b>"))
         cur = paths.data_dir(); mode = paths.mode_of(cur)
-        self.rb_icloud = QRadioButton("iCloud Drive — общие для всех твоих Mac" + ("" if paths.icloud_available() else " (iCloud Drive на этом Mac не включён)"))
-        self.rb_local = QRadioButton("Только на этом Mac")
+        self.rb_icloud = QRadioButton("iCloud Drive — общие для всех твоих Mac" + ("" if paths.icloud_available() else " (не включён)"))
+        self.rb_local = QRadioButton("Только на этом компьютере")
         self.rb_custom = QRadioButton("Другая папка (Dropbox, MEGAsync, …)")
         self.rb_icloud.setEnabled(paths.icloud_available())
         if paths.DEMO_DIR is not None:                 # демо: временная папка, переключать некуда
@@ -612,7 +663,7 @@ class SettingsDialog(QDialog):
         combo.setCurrentIndex(max(0, combo.findData(cls)))
         if ticker in (self.cfg.get("auto_classified") or []):
             combo.setToolTip("Класс определён автоматически — проверь")
-            combo.setStyleSheet("color: #FF9F0A")
+            combo.setStyleSheet(f"color: {SY.WARN}")
         combo.currentIndexChanged.connect(self._touch)
         combo.currentIndexChanged.connect(lambda _=0, c=combo: (c.setStyleSheet(""), c.setToolTip("")))
         self.t_instr.setCellWidget(r, 2, combo)
@@ -816,9 +867,9 @@ class SettingsDialog(QDialog):
             cat_boxes = []
             for url, title in items:
                 line = QHBoxLayout()
-                cb = QCheckBox(f"{title} — {url}")
+                cb = QCheckBox(title); cb.setToolTip(url)            # адрес — в подсказке: строка не распирает окно
                 cb.setChecked(url in have); cb.setProperty("url", url)
-                st = QLabel("проверяю…"); st.setStyleSheet("color: gray"); st.setMinimumWidth(150)
+                st = QLabel("проверяю…"); st.setStyleSheet("color: gray"); st.setFixedWidth(230)
                 status_labels[url] = st
                 line.addWidget(cb, 1); line.addWidget(st)
                 boxes.append(cb); cat_boxes.append(cb); il.addLayout(line)
@@ -826,6 +877,7 @@ class SettingsDialog(QDialog):
             b_none.clicked.connect(lambda _=False, bs=cat_boxes: [c.setChecked(False) for c in bs])
         il.addStretch()
         sc = QScrollArea(); sc.setWidget(inner); sc.setWidgetResizable(True); lay.addWidget(sc, 1)
+        sc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         # проверка всех источников каталога — сразу при открытии, параллельно, не блокируя окно
         results: dict[str, bool] = {}
@@ -834,8 +886,9 @@ class SettingsDialog(QDialog):
             results[url] = ok
             lbl = status_labels.get(url)
             if lbl is not None:
-                lbl.setText(("✓ " if ok else "✗ ") + msg[:60])
-                lbl.setStyleSheet("color: #34C759" if ok else "color: #FF453A")
+                mark, color = SY.ok_mark(ok)
+                lbl.setText(f"{mark} " + (msg[:30] if ok else short_error(msg)))
+                lbl.setStyleSheet(f"color: {color}")
                 lbl.setToolTip(msg)
 
         bottom = QHBoxLayout()
@@ -862,9 +915,7 @@ class SettingsDialog(QDialog):
         QTimer.singleShot(0, start_check)
 
         def cleanup() -> None:
-            wk = getattr(dlg, "worker", None)
-            if wk is not None and wk.isRunning():
-                wk.requestInterruption(); wk.wait(3000)
+            stop_workers([getattr(dlg, "worker", None)], 3000)
         dlg.finished.connect(lambda _: cleanup())
         if dlg.exec() != QDialog.Accepted:
             return
@@ -879,25 +930,32 @@ class SettingsDialog(QDialog):
             r = self.t_feeds.rowCount(); self.t_feeds.insertRow(r)
             self.t_feeds.setItem(r, 0, _cell(u))
             ok = results.get(u)
-            mark = "" if ok is None else ("✓" if ok else "✗")
-            it = _cell(mark, editable=False)
+            it = _cell("", editable=False)
             if ok is not None:
-                it.setForeground(QColor("#34C759") if ok else QColor("#FF453A"))
+                _set_check_mark(it, ok)
             self.t_feeds.setItem(r, 1, it)
         self._touch()
 
     def _feeds_check(self) -> None:
-        """Проверить каждый источник: пишем ✓/✗ в колонку «Статус»."""
-        import news as NEWS
+        """Проверить каждый источник — в фоне (FeedCheckWorker), ✓/✗ в колонку «Статус» по мере ответов.
+        Раньше проверка шла в UI-потоке через processEvents — окно замирало на медленных лентах (правило 4)."""
+        if is_running(getattr(self, "_feeds_worker", None)):
+            return
+        rows = {}
         for r in range(self.t_feeds.rowCount()):
             url = self._text(self.t_feeds, r, 0)
-            if not url:
-                continue
-            self.t_feeds.item(r, 1).setText("…"); QApplication.processEvents()
-            ok, msg = NEWS.check_feed(url, self.bundle_path)
-            it = self.t_feeds.item(r, 1)
-            it.setText(("✓ " if ok else "✗ ") + msg)
-            it.setForeground(QColor("#34C759") if ok else QColor("#FF453A"))
+            if url:
+                rows[url] = r
+                self.t_feeds.item(r, 1).setText("…")
+
+        def one(url: str, ok: bool, msg: str) -> None:
+            r = rows.get(url)
+            it = self.t_feeds.item(r, 1) if r is not None and r < self.t_feeds.rowCount() else None
+            if it is not None and self._text(self.t_feeds, r, 0) == url:
+                _set_check_mark(it, ok, msg)
+        self._feeds_worker = FeedCheckWorker(list(rows), self)
+        self._feeds_worker.one.connect(one)
+        self._feeds_worker.start()
 
     # ---- Скринер ------------------------------------------------------------
 
@@ -915,7 +973,8 @@ class SettingsDialog(QDialog):
         self.sp_ff.setValue(float(sc.get("min_free_float", 0))); self.sp_ff.valueChanged.connect(self._touch)
         self.ed_excl_sectors = QLineEdit(", ".join(sc.get("exclude_sectors") or [])); self.ed_excl_sectors.setPlaceholderText("например: IT, Здравоохранение")
         self.ed_excl_sectors.textChanged.connect(self._touch)
-        form.addRow("Средняя дивдоходность за 5 лет ≥ (отсекает разовых плательщиков):", self.sp_avg5)
+        form.addRow("Средняя дивдоходность за 5 лет ≥:", self.sp_avg5)
+        self.sp_avg5.setToolTip("Отсекает разовых плательщиков")
         form.addRow("P/E ≤:", self.sp_pe)
         form.addRow("Free float ≥:", self.sp_ff)
         form.addRow("Исключить отрасли (через запятую):", self.ed_excl_sectors)
@@ -937,7 +996,6 @@ class SettingsDialog(QDialog):
 
     # ---- ИИ -----------------------------------------------------------------
 
-    AI_SERVICE = "portfolio-check.ai"
 
     def _tab_ai(self) -> QWidget:
         import ai as AI
@@ -1021,20 +1079,20 @@ class SettingsDialog(QDialog):
         import paths
         if not hasattr(self, "lbl_ai_test"):
             return
-        r = AI.last_check(self.ai_provider_key(), self.ai_model.text().strip(), paths.data_dir() / "cache")
+        r = AI.last_check(self.ai_provider_key(), self.ai_model.text().strip(), paths.cache_dir())
         self.lbl_ai_test.setText(AI.describe_check(r) if r else "")
 
     def _ai_tier_info(self) -> None:
         """Сколько бесплатных запросов в сутки доступно этому ключу: зависит от того, покупались ли кредиты."""
         import ai as AI
-        key = SEC.get(self.AI_SERVICE, "openrouter")
+        key = SEC.get(AI_KEY_SERVICE, "openrouter")
         base = ("Лимит бесплатных (:free) моделей — общий на аккаунт: 20 запросов в минуту и 50 в сутки, а после покупки "
                 "кредитов от $10 — 1000 в сутки. Одно обновление приложения тратит 2 запроса (новости + все экраны сразу), "
                 "кнопка «Проверить» — ещё 1.")
         block = ""
         if AI.RATE_BLOCK_UNTIL and AI.RATE_BLOCK_UNTIL > __import__("datetime").datetime.now():
-            block = (f"<br><span style='color:#FF453A'>Дневной лимит исчерпан, запросы к :free-моделям не отправляются "
-                     f"до {AI.RATE_BLOCK_UNTIL:%H:%M}.</span>")
+            block = "<br>" + SY.span(f"Дневной лимит исчерпан, запросы к :free-моделям не отправляются "
+                                     f"до {AI.RATE_BLOCK_UNTIL:%H:%M}.", SY.BAD)
         self.lbl_ai_tier.setText(base + block)
         if not key:
             return
@@ -1046,7 +1104,7 @@ class SettingsDialog(QDialog):
             elif info.get("free_tier") is False:
                 tier = " <b>На аккаунте покупались кредиты: до 1000 бесплатных запросов в сутки.</b>"
             self.lbl_ai_tier.setText(base + tier + block)
-        if getattr(self, "_tier_worker", None) is not None and self._tier_worker.isRunning():
+        if is_running(getattr(self, "_tier_worker", None)):
             return
         self._tier_worker = TierWorker(key, self.ai_proxy.text().strip())
         self._tier_worker.done.connect(show); self._tier_worker.start()
@@ -1054,23 +1112,23 @@ class SettingsDialog(QDialog):
     def _load_models(self, force: bool) -> None:
         """Каталог OpenRouter — в фоне; из кэша (сутки) мгновенно."""
         import paths
-        if getattr(self, "_models_worker", None) is not None and self._models_worker.isRunning():
+        if is_running(getattr(self, "_models_worker", None)):
             return
         self.ai_model.lbl.setText("загружаю каталог моделей…")
-        self._models_worker = ModelsWorker(paths.data_dir() / "cache", self.ai_proxy.text().strip(), force)
+        self._models_worker = ModelsWorker(paths.cache_dir(), self.ai_proxy.text().strip(), force)
         self._models_worker.done.connect(lambda ms, src: self.ai_model.set_models(ms, f"каталог: {src}"))
         self._models_worker.failed.connect(lambda m: self.ai_model.lbl.setText(f"каталог не загружен ({m}) — впиши id вручную"))
         self._models_worker.start()
 
     def _ai_key(self) -> str | None:
-        p = self.ai_provider_key()
-        return "-" if p == "ollama" else SEC.get(self.AI_SERVICE, p)
+        import ai as AI
+        return AI.get_key(self.ai_provider_key())
 
     def _ai_refresh_key_label(self) -> None:
         p = self.ai_provider_key()
         if p == "ollama":
             self.lbl_ai_key.setText("Ключ не нужен — локальная модель"); return
-        self.lbl_ai_key.setText("Ключ: сохранён ✓" if SEC.get(self.AI_SERVICE, p) else "Ключ: не задан")
+        self.lbl_ai_key.setText("Ключ: сохранён ✓" if SEC.get(AI_KEY_SERVICE, p) else "Ключ: не задан")
 
     def _ai_set_key(self) -> None:
         p = self.ai_provider_key()
@@ -1078,11 +1136,11 @@ class SettingsDialog(QDialog):
             return
         key, ok = QInputDialog.getText(self, "API-ключ", f"Ключ для {p}:", QLineEdit.Password)
         if ok and key.strip():
-            SEC.set(self.AI_SERVICE, p, key.strip())
+            SEC.set(AI_KEY_SERVICE, p, key.strip())
             self._ai_refresh_key_label(); self.accessChanged.emit()
 
     def _ai_del_key(self) -> None:
-        SEC.delete(self.AI_SERVICE, self.ai_provider_key())
+        SEC.delete(AI_KEY_SERVICE, self.ai_provider_key())
         self._ai_refresh_key_label(); self.accessChanged.emit()
 
     def _ai_test(self) -> None:
@@ -1090,11 +1148,12 @@ class SettingsDialog(QDialog):
         p = self.ai_provider_key(); key = self._ai_key()
         if not key:
             self.lbl_ai_test.setText("Сначала задай ключ."); return
-        if getattr(self, "_check_worker", None) is not None and self._check_worker.isRunning():
+        if is_running(getattr(self, "_check_worker", None)):
             return
         self.lbl_ai_test.setText("Проверяю модель (один запрос)…"); self.b_ai_test.setEnabled(False)
-        self._check_worker = CheckWorker(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(),
-                                         self.ai_url.text().strip(), paths.data_dir() / "cache", self)
+        import ai as AI
+        conf = AI.AIConfig(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(), self.ai_url.text().strip())
+        self._check_worker = CheckWorker(conf, paths.cache_dir(), self)
 
         def done(r):
             import ai as AI
@@ -1278,10 +1337,8 @@ class SettingsDialog(QDialog):
         return it.text().strip() if it else ""
 
     def closeEvent(self, event) -> None:
-        for name, ms in (("_models_worker", 3000), ("_tier_worker", 3000), ("_check_worker", 60000)):
-            wk = getattr(self, name, None)
-            if wk is not None and wk.isRunning():
-                wk.wait(ms)                # дожидаемся, чтобы не уничтожить живой поток (SIGABRT)
+        for name, ms in (("_models_worker", 3000), ("_tier_worker", 3000), ("_check_worker", 60000), ("_feeds_worker", 15000)):
+            stop_workers([getattr(self, name, None)], ms, interrupt=False)   # не уничтожать живой поток (SIGABRT)
         # На закрытие — дописать то, что ещё не ушло по таймеру
         if self._timer.isActive():
             self._timer.stop()

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 import history as H
 import paths
 import risk as RK
+from widgets import note
 
 
 class RiskMixin:
@@ -17,13 +18,13 @@ class RiskMixin:
         self.lbl_risk = QLabel(); self.lbl_risk.setWordWrap(True)
         self.tbl_risk = self._table(["Бумага", "Тикер", "Вес, %", "Волатильность, % год", "Вклад в риск, %"])
         self.tbl_risk.sortByColumn(4, Qt.DescendingOrder)   # по вкладу в риск; числа сортируются как числа (SortItem)
-        self.lbl_risk_pairs = QLabel(); self.lbl_risk_pairs.setWordWrap(True); self.lbl_risk_pairs.setStyleSheet("color: gray")
+        self.lbl_risk_pairs = note()
         lay.addWidget(self.lbl_risk); lay.addWidget(self.tbl_risk, 1); lay.addWidget(self.lbl_risk_pairs)
         return w
 
     def _risk_report(self):
         """Расчёт — по кэшу свечей; повторно только если изменились позиции или свечи (перерисовок много)."""
-        cache = paths.data_dir() / "cache"
+        cache = paths.cache_dir()
         files = [cache / f"candles_{p.figi}.json" for p in self.positions if p.figi]
         key = (tuple((p.ticker, float(p.value_rub)) for p in self.positions),
                max((f.stat().st_mtime for f in files if f.exists()), default=0))

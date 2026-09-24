@@ -16,7 +16,8 @@ import portfolio_check as pc
 import scenarios as SC
 from charts import DivergingBarChart
 from diagnostics import log
-from ui_common import MASK
+import style as SY
+from widgets import scroll_wrap, is_running
 from workers import FactorsWorker
 
 
@@ -42,9 +43,14 @@ class ScenariosMixin:
                                           empty_text="задай сценарий")
         self.tbl_sc = self._table(["Бумага", "Тикер", "Изменение, ₽", "Изменение, %", "β к индексу", "β к доллару", "R²"])
         self.tbl_sc.sortByColumn(2, Qt.AscendingOrder)       # сначала самые большие потери
-        body = QHBoxLayout(); body.addWidget(self.chart_sc, 2); body.addWidget(self.tbl_sc, 3)
+        body = QHBoxLayout(); body.addWidget(scroll_wrap(self._doc_panel(self._wrap_one(self.chart_sc))), 2); body.addWidget(self.tbl_sc, 3)
         lay.addWidget(self.lbl_sc); lay.addLayout(body, 1)
         self._set_scenario(*SC.PRESETS[0][1:])
+        return w
+
+    @staticmethod
+    def _wrap_one(chart) -> QWidget:
+        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(chart, 1)
         return w
 
     def _set_scenario(self, d_index: float, d_usd: float) -> None:
@@ -54,11 +60,11 @@ class ScenariosMixin:
 
     def start_factors(self) -> None:
         """Догрузить индекс и доллар (кэш старше суток) и календарь ЦБ (старше недели). В демо — не ходим в сеть."""
-        cache = paths.data_dir() / "cache"
+        cache = paths.cache_dir()
         if paths.DEMO_DIR is not None or (FA.fresh(cache, FA.IMOEX) and FA.fresh(cache, FA.USDRUB)
                                           and macro.calendar_fresh(cache)):
             return
-        if getattr(self, "factors_worker", None) is not None and self.factors_worker.isRunning():
+        if is_running(getattr(self, "factors_worker", None)):
             return
         self.factors_worker = FactorsWorker(cache)
         self.factors_worker.done.connect(self._on_factors)
@@ -74,7 +80,7 @@ class ScenariosMixin:
         self.check_alerts()
 
     def _scenario_betas(self):
-        cache = paths.data_dir() / "cache"
+        cache = paths.cache_dir()
         files = [cache / f"candles_{x}.json" for x in [p.figi for p in self.positions if p.figi] + [FA.IMOEX, FA.USDRUB]]
         key = (tuple((p.ticker, float(p.value_rub)) for p in self.positions),
                max((f.stat().st_mtime for f in files if f.exists()), default=0))
@@ -96,7 +102,7 @@ class ScenariosMixin:
             self.chart_sc.set_data([]); self._fill(self.tbl_sc, []); return
         bs, missing = b
         r = SC.apply(bs, self.sp_sc_index.value(), self.sp_sc_usd.value(), missing, pc.class_label)
-        money = (lambda v: MASK) if self.privacy else (lambda v: f"{v:+,.0f}")
+        money = SY.money_fn(self.privacy, signed=True)
         pct = r.change / r.total * 100 if r.total else 0.0
         self.lbl_sc.setText(
             f"Оценка: <b>{money(r.change)} ₽</b> ({pct:+.1f}% от оценённой части портфеля). "

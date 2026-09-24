@@ -46,7 +46,7 @@ import config_migrate as CM
 from osutil import native_keys, IS_MAC
 
 from ui_common import APP_NAME, get_token, ensure_config
-from widgets import BusySpinner
+from widgets import BusySpinner, is_running, note, scroll_wrap, stop_workers
 from workers import FairPriceWorker, LoadWorker
 from screens.history import HistoryMixin
 from screens.news import NewsMixin
@@ -62,6 +62,7 @@ from screens.exporting import ExportMixin
 from screens.risk_panel import RiskMixin
 from screens.alerts_ui import AlertsMixin
 from screens.scenarios_panel import ScenariosMixin
+import style as SY
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +115,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                 "(или перезапустить приложение).",
                 "Открыть настройки доступа" if IS_MAC else "",
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" if IS_MAC else "", retry=True)
-        AI.CATALOG_DIR = paths.data_dir() / "cache"   # модель по умолчанию для OpenRouter — из живого каталога
+        AI.CATALOG_DIR = paths.cache_dir()   # модель по умолчанию для OpenRouter — из живого каталога
         AI.load_rate_block()                           # дневной лимит, пойманный до перезапуска, ещё действует
         self.restore_layout()                      # размер окна, положение разделителей, активный экран
         if self.needs_setup():
@@ -278,18 +279,17 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.treemap_small = TreemapChart(); self.treemap_small.setMinimumHeight(110)
         self.lbl_heat = QLabel(); self.lbl_heat.setStyleSheet("color: gray")
         self.chart_history = LineChart("Стоимость портфеля", "₽", zero_based=False)
-        self.lbl_history = QLabel(); self.lbl_history.setWordWrap(True); self.lbl_history.setStyleSheet("color: gray")
+        self.lbl_history = note()
         self.news_tbl = self._news_table(); self.news_tbl_small = self._news_table()
-        self.lbl_news = QLabel(); self.lbl_news.setWordWrap(True); self.lbl_news.setStyleSheet("color: gray")
+        self.lbl_news = note()
         self.tbl_ideas = self._table(["Компания", "Тикер", "Отрасль", "Мес.", "Новости", "Цена", "Кап., млрд", "Дивдоходность",
                                       "Дивдох. 5 лет", "Дивиденды, ₽", "P/E", "Долг/EBITDA", "ROE", "Free float", "Экс-дивиденд"])
         self.tbl_ideas.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tbl_ideas.customContextMenuRequested.connect(self._ideas_menu)
         self.btn_blacklist = QPushButton("Исключить"); self.btn_blacklist.clicked.connect(self.blacklist_selected)
         self.btn_blacklist.setToolTip("В чёрный список скринера с причиной (Настройки → Скринер)")
-        self.lbl_ideas = QLabel("Скринер ещё не запускался — он идёт последним шагом фоновой загрузки (проход по T-Invest занимает ~10–20 секунд). "
+        self.lbl_ideas = note("Скринер ещё не запускался — он идёт последним шагом фоновой загрузки (проход по T-Invest занимает ~10–20 секунд). "
                                 "Или нажми «Найти кандидатов».")
-        self.lbl_ideas.setWordWrap(True); self.lbl_ideas.setStyleSheet("color: gray")
 
         # период тепловой карты
         self.heat_group = QButtonGroup(self)
@@ -331,7 +331,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                            ("signals", "Сигналы"), ("goal", "Цель")):
             card = self._doc_panel(QWidget()); vl = QVBoxLayout(card); vl.setContentsMargins(12, 8, 12, 8); vl.setSpacing(2)
             t = QLabel(title); t.setStyleSheet("color: gray; font-size: 11px")
-            v = QLabel("—"); v.setStyleSheet("font-size: 18px; font-weight: 600")
+            v = QLabel("—"); v.setStyleSheet(SY.KPI_CSS)
             s = QLabel(""); s.setStyleSheet("color: gray; font-size: 11px")
             vl.addWidget(t); vl.addWidget(v); vl.addWidget(s)
             self.kpi[key] = (v, s); kpi_row.addWidget(card, 1)
@@ -341,7 +341,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         left.addWidget(self.tbl_classes)
         sum_charts = self._doc_panel(QWidget()); scl = QHBoxLayout(sum_charts); scl.setContentsMargins(4, 4, 4, 4)
         scl.addWidget(self.chart_ranges, 1); scl.addWidget(self.chart_rebalance, 1)
-        left.addWidget(sum_charts); left.setStretchFactor(0, 3); left.setStretchFactor(1, 2)
+        left.addWidget(scroll_wrap(sum_charts)); left.setStretchFactor(0, 3); left.setStretchFactor(1, 2)
         right = QSplitter(Qt.Vertical); right.setObjectName("overview_right")
         sig_w = QWidget(); sl = QVBoxLayout(sig_w); sl.setContentsMargins(0, 0, 0, 0)
         self.lbl_signals_title = QLabel("<b>Сигналы</b>"); sl.addWidget(self.lbl_signals_title); sl.addWidget(self.txt_signals, 1)
@@ -369,14 +369,15 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         pies = self._doc_panel(QWidget()); pl = QVBoxLayout(pies); pl.setContentsMargins(4, 4, 4, 4)
         for pie in (self.pie_currency, self.pie_companies, self.pie_sectors):
             pl.addWidget(pie, 1)
-        pos_top = QSplitter(Qt.Horizontal); pos_top.addWidget(self.tbl_pos); pos_top.addWidget(pies)
+        pies.setMinimumWidth(300)
+        pos_top = QSplitter(Qt.Horizontal); pos_top.addWidget(self.tbl_pos); pos_top.addWidget(scroll_wrap(pies))
         pos_top.setStretchFactor(0, 3); pos_top.setStretchFactor(1, 1)
         blocked_w = self._doc_panel(QWidget()); bl = QVBoxLayout(blocked_w); bl.setContentsMargins(8, 8, 8, 8)
         bl.addWidget(self.lbl_blocked)
         b_split = QSplitter(Qt.Horizontal); b_split.setObjectName("blocked"); b_split.addWidget(self.tbl_blocked)
         b_charts = QWidget(); bcl = QHBoxLayout(b_charts); bcl.setContentsMargins(0, 0, 0, 0)
         bcl.addWidget(self.bar_blocked, 3); bcl.addWidget(self.pie_blocked, 2)
-        b_split.addWidget(b_charts); b_split.setStretchFactor(0, 3); b_split.setStretchFactor(1, 2)
+        b_split.addWidget(scroll_wrap(self._doc_panel(b_charts))); b_split.setStretchFactor(0, 3); b_split.setStretchFactor(1, 2)
         bl.addWidget(b_split, 1)
         self.pos_split = QSplitter(Qt.Vertical); self.pos_split.setObjectName("portfolio")
         self.pos_bottom = QTabWidget(); self.pos_bottom.setDocumentMode(True)
@@ -434,12 +435,14 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         hist_w = self._doc_panel(QWidget()); hsl2 = QVBoxLayout(hist_w); hsl2.setContentsMargins(8, 8, 8, 8)
         hsl2.addWidget(self.chart_history, 1); hsl2.addWidget(self.lbl_history)
         strat_bottom = QSplitter(Qt.Horizontal); strat_bottom.setObjectName("strategy_bottom")
-        strat_bottom.addWidget(hist_w); strat_bottom.addWidget(self._build_attribution_panel())
+        strat_bottom.addWidget(scroll_wrap(hist_w)); strat_bottom.addWidget(self._build_attribution_panel())
         strat_bottom.addWidget(self.txt_report)
         strat_bottom.setStretchFactor(0, 3); strat_bottom.setStretchFactor(1, 3); strat_bottom.setStretchFactor(2, 2)
+        strat_bottom.setSizes([3000, 3000, 2000])      # пропорция 3:3:2 — у прокруток маленькая подсказка размера
         strategy = QSplitter(Qt.Vertical); strategy.setObjectName("strategy")
         strategy.addWidget(self.forecast); strategy.addWidget(strat_bottom)
         strategy.setStretchFactor(0, 3); strategy.setStretchFactor(1, 2)
+        strat_bottom.setMinimumHeight(180)            # на низком окне не схлопывается в полоску под формой
         st = QWidget(); stl = QVBoxLayout(st); stl.setContentsMargins(8, 8, 8, 8)
         stl.addWidget(self.exec_panels["strategy"]); stl.addWidget(strategy, 1)
         self.tabs.addTab(st, "Стратегия")
@@ -486,13 +489,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         """Сохранить размеры окна и остановить фоновые потоки (Qt при живом QThread вызывает abort())."""
         self.save_layout()
         self.auto_timer.stop()
-        running = [getattr(self, n) for n in self.WORKERS if getattr(self, n, None) is not None and getattr(self, n).isRunning()]
-        for wk in running:
-            wk.requestInterruption()          # воркеры проверяют флаг между запросами
-        for wk in running:
-            if not wk.wait(8000):
-                log.warning("поток %s не остановился за 8 с — завершаю принудительно", type(wk).__name__)
-                wk.terminate(); wk.wait(2000)
+        stop_workers([getattr(self, n, None) for n in self.WORKERS], 8000, terminate=True)
         if self.settings_win is not None:
             self.settings_win.close()
         if getattr(self, "about_win", None) is not None:
@@ -621,7 +618,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
             log.error("снапшот %s не прочитан: %s", f, e); return
         self._reclassify(); pc.apply_blocked_flags(self.positions, self.cfg); pc.fill_fair_prices_local(self.positions, self.cfg)
         # свечи из кэша → доходности по периодам и история, без API
-        cache_dir = paths.data_dir() / "cache"
+        cache_dir = paths.cache_dir()
         candles = {p.figi: H.load_cached(cache_dir, p.figi) for p in self.positions if p.figi}
         candles = {k: v for k, v in candles.items() if v}
         if candles:
@@ -745,7 +742,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         token = get_token()
         if not token or not self.bundle_path().exists():
             return
-        if getattr(self, "fair_worker", None) is not None and self.fair_worker.isRunning():
+        if is_running(getattr(self, "fair_worker", None)):
             return
         self.set_status("Пересчитываю цены заблокированных…")
         self.fair_worker = FairPriceWorker(token, self.cfg, self.positions)

@@ -60,7 +60,8 @@
   (`GetAssetFundamentals`, `GetDividends`).
 - **Сайты (RSS, ISS, ЦБ, ИИ) — только через `net.system_context()`** (корни ОС через truststore), не
   `ssl.create_default_context()`: в собранной программе пути OpenSSL — от машины сборки, dmg из CI не видел ни
-  одного сайта. T-Invest — свой бандл с корнем Минцифры. Ленты бывают Atom.
+  одного сайта. T-Invest — свой бандл с корнем Минцифры; из того же бандла `net` доверяет Минцифры и для сайтов
+  (только эти сертификаты, в систему ничего не ставится). Ленты бывают Atom.
 - **Новый график — с `need_height()`**, несколько графиков в колонке — в `widgets.scroll_wrap`: иначе на экране
   ноутбука подписи налезают. Проверяй `app.py --demo` в окне ~1300×720 (тест в `test_demo.py`).
 - **codesign — строго после правки Info.plist**, иначе Keychain отдаёт `SecAuthFailure` (см. `build_mac.sh`).

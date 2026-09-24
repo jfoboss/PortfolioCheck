@@ -15,17 +15,17 @@ def test_fallback_has_roots_without_openssl_paths(monkeypatch):
     monkeypatch.setitem(sys.modules, "truststore", None)             # import truststore → ImportError
     monkeypatch.setenv("SSL_CERT_FILE", "/nonexistent/cert.pem")
     monkeypatch.setenv("SSL_CERT_DIR", "/nonexistent/certs")
-    net.system_context.cache_clear()
+    net._context.cache_clear()
     try:
         ctx = net.system_context()
         assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname
         assert len(ctx.get_ca_certs()) > 50                          # корни certifi
     finally:
-        net.system_context.cache_clear()
+        net._context.cache_clear()
 
 
 def test_truststore_used_when_available():
-    net.system_context.cache_clear()
+    net._context.cache_clear()
     ctx = net.system_context()
     assert type(ctx).__module__.startswith("truststore") and ctx.verify_mode == ssl.CERT_REQUIRED
 
@@ -97,3 +97,35 @@ def test_openrouter_catalog_and_key_use_system_roots(monkeypatch):
     for handlers in seen:
         https = [h for h in handlers if isinstance(h, urllib.request.HTTPSHandler)]
         assert https and https[0]._context is net.system_context()
+
+
+def test_mincifry_root_from_bundle_trusted_for_sites(tmp_path, monkeypatch):
+    """Сайты на сертификатах Минцифры: корень берётся из бандла T-Invest (Настройки → Доступ → «Собрать бандл»),
+    в систему ничего не ставится. В тестовых данных — публичная цепочка Russian Trusted Sub CA → Root CA."""
+    import grpc
+    import portfolio_check as pc
+    from pathlib import Path
+    roots = (Path(grpc.__file__).parent / "_cython" / "_credentials" / "roots.pem").read_text(encoding="utf-8")
+    chain = (Path(__file__).parent / "data" / "mincifry_chain.pem").read_text(encoding="utf-8")
+    bundle = tmp_path / "ca-bundle.pem"
+    bundle.write_text(roots.rstrip("\n") + "\n" + chain, encoding="utf-8")
+    der = net.mincifry_roots(bundle)
+    assert der and der.count(b"Russian Trusted") >= 2                      # только Минцифры, не весь бандл
+    assert len(der) < 10_000
+    monkeypatch.setattr(pc, "_bundle_path", lambda: bundle)
+    import truststore
+    loaded = []
+    orig = truststore.SSLContext.load_verify_locations
+    monkeypatch.setattr(truststore.SSLContext, "load_verify_locations",
+                        lambda self, cafile=None, capath=None, cadata=None: (loaded.append(cadata),
+                                                                            orig(self, cafile, capath, cadata))[1])
+    net._context.cache_clear()
+    net.system_context()
+    assert loaded == [der]                                                  # truststore: якоря поверх хранилища ОС
+    monkeypatch.setitem(sys.modules, "truststore", None)                  # запасной путь: видно по списку корней
+    net._context.cache_clear()
+    subjects = [str(c.get("subject")) for c in net.system_context().get_ca_certs()]
+    assert any("Russian Trusted Root CA" in x for x in subjects)
+    monkeypatch.setattr(pc, "_bundle_path", lambda: None)                 # бандла нет — только хранилище ОС / certifi
+    assert not any("Russian Trusted" in str(c.get("subject")) for c in net.system_context().get_ca_certs())
+    net._context.cache_clear()

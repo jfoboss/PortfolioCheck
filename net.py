@@ -18,11 +18,46 @@ import ssl
 import urllib.error
 import urllib.request
 from functools import lru_cache
+from pathlib import Path
 
 
-@lru_cache(maxsize=None)
+def mincifry_roots(bundle) -> bytes:
+    """Сертификаты Минцифры (Russian Trusted Root / Sub CA) из бандла T-Invest в DER — b"", если бандла нет.
+    Бандл собирает программа (Настройки → Доступ → «Собрать бандл»): корни grpcio + цепочка сервера T-Invest.
+    Для сайтов берём только сертификаты Минцифры — остальные корни и так есть в хранилище ОС."""
+    if bundle is None or not Path(bundle).exists():
+        return b""
+    tmp = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    try:
+        tmp.load_verify_locations(cafile=str(bundle))
+    except (OSError, ssl.SSLError):
+        return b""
+    info, der = tmp.get_ca_certs(), tmp.get_ca_certs(binary_form=True)
+    return b"".join(d for i, d in zip(info, der) if "Russian Trusted" in str(i.get("subject", "")))
+
+
+def _bundle():
+    try:
+        import portfolio_check as pc
+        return pc._bundle_path()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def system_context(legacy: bool = False) -> ssl.SSLContext:
-    """Контекст с проверкой сертификата и имени. legacy — для сайтов с устаревшими шифрами (проверка остаётся)."""
+    """Контекст с проверкой сертификата и имени: корни ОС + корень Минцифры из бандла T-Invest (если собран) —
+    для сайтов на российских сертификатах; в систему ничего не устанавливается. legacy — для сайтов с
+    устаревшими шифрами (проверка остаётся). Кэш — по времени изменения бандла: новый бандл подхватывается сразу."""
+    b = _bundle()
+    try:
+        stamp = (str(b), b.stat().st_mtime) if b is not None else ("", 0.0)
+    except OSError:
+        stamp = ("", 0.0)
+    return _context(legacy, *stamp)
+
+
+@lru_cache(maxsize=8)
+def _context(legacy: bool, bundle: str, _mtime: float) -> ssl.SSLContext:
     try:
         import truststore
         ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -33,6 +68,9 @@ def system_context(legacy: bool = False) -> ssl.SSLContext:
             ctx.load_verify_locations(cafile=certifi.where())
         except Exception:  # noqa: BLE001
             pass
+    extra = mincifry_roots(bundle or None)
+    if extra:
+        ctx.load_verify_locations(cadata=extra)       # truststore: дополнительные якоря поверх хранилища ОС
     if legacy:
         ctx.set_ciphers("DEFAULT@SECLEVEL=1")
     return ctx

@@ -249,8 +249,14 @@ def _chat_once(provider: str, key: str, model: str, system: str, user: str, prox
             fb = _fallbacks(model)
             if fb:
                 body["models"] = [model] + fb        # маршрутизация OpenRouter: при сбое провайдера — следующая модель
+        # каждая попытка — в лог: иначе при долгом ответе (рассуждающие бесплатные модели думают минутами) не видно,
+        # что запрос вообще ушёл
+        log.info("ИИ: запрос к %s/%s%s", provider, model, f" (запасные: {', '.join(body['models'][1:])})" if "models" in body else "")
+        t0 = time.monotonic()
         resp = _post(url, _openai_headers(provider, key), body, proxy)
-        return resp["choices"][0]["message"]["content"], str(resp.get("model") or model)
+        used = str(resp.get("model") or model)
+        log.info("ИИ: ответ за %.0f с от %s", time.monotonic() - t0, used)
+        return resp["choices"][0]["message"]["content"], used
     resp = _post(url, {}, {"model": model, "stream": False, "format": "json",
                            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}, "")
     return resp["message"]["content"], model
@@ -383,6 +389,11 @@ def set_rate_block(until: datetime) -> None:
         (CATALOG_DIR / RATE_BLOCK_FILE).write_text(json.dumps({"until": until.isoformat()}), encoding="utf-8")
     except OSError as e:
         log.warning("не удалось сохранить блокировку лимита: %s", e)
+
+
+def rate_block_until() -> datetime | None:
+    """До какого времени запросы к бесплатным моделям не отправляются (дневной лимит); None — ограничения нет."""
+    return RATE_BLOCK_UNTIL if RATE_BLOCK_UNTIL and RATE_BLOCK_UNTIL > datetime.now() else None
 
 
 def load_rate_block() -> datetime | None:

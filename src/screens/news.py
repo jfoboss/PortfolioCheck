@@ -21,6 +21,7 @@ from widgets import is_running
 
 
 EXEC_GAP_MS = 5000      # между сводкой новостей и сводкой экранов
+EXEC_AFTER_FAIL_MS = 30000   # сводка новостей не удалась (провайдер перегружен) — экраны попробуем чуть позже
 
 
 class NewsMixin:
@@ -176,6 +177,11 @@ class NewsMixin:
         shown = (f" — показана прошлая сводка ({old.model}, {old.at.replace('T', ' ')})" if old is not None
                  else "")
         self.set_status(f"ИИ-сводка ({model}) не удалась: {msg[:160]}{shown}")
+        # сводка экранов от сводки новостей не зависит: раньше она запускалась только после удачной, и при днях
+        # «провайдер перегружен» экраны неделями показывали старьё. Дневной лимит — не пытаемся (всё равно откажет)
+        if AI.rate_block_until() is None:
+            force = getattr(self, "_exec_force", False); self._exec_force = False
+            QTimer.singleShot(EXEC_AFTER_FAIL_MS, lambda: self.run_exec(manual=force))
         self._run_ai_pending()
 
     def _on_ai(self, result) -> None:

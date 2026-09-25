@@ -54,7 +54,7 @@ def entries(win) -> list[Entry]:
         name = win.tabs.tabText(i)
         out.append(Entry(f"Экран «{name}»", f"{name} экран".lower(), lambda i=i: win.tabs.setCurrentIndex(i), "экран"))
     acts = [(win.act_refresh, "обновить загрузить refresh"), (win.act_privacy, "скрыть показать суммы глазик privacy"),
-            (win.act_prefs, "настройки preferences"), (win.act_about, "о программе версия about")]
+            (win.act_prefs, "настройки preferences"), (win.act_about, "о программе версия about github")]
     for a, k in acts:
         if a.isVisible() and a.isEnabled():
             out.append(Entry(a.text().replace("&", ""), k, a.trigger, "действие"))

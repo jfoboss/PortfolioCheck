@@ -21,6 +21,14 @@ from widgets import is_running, stop_workers
 import style as SY
 
 APP_VERSION = "1.5"
+REPO_URL = "https://github.com/jfoboss/PortfolioCheck"
+ABOUT_TEXT = (
+    "Настольное приложение для macOS, Windows и Linux: сверяет портфель в Т-Инвестициях с твоими правилами — "
+    "целевыми долями классов активов, лимитами на эмитентов, правилами добора — и подсвечивает отклонения. "
+    "Плюс тепловые карты, новости по бумагам, скринер дивидендных идей, сценарии и калькулятор «иду ли я по плану».")
+DISCLAIMER = ("Не является инвестиционной рекомендацией: программа только считает и показывает, решения принимаешь ты. "
+              "Токен T-Invest — только на чтение, сделок программа не совершает. Настройки и данные хранятся у тебя, "
+              "токен и ключи ИИ — в системном хранилище.")
 LOG_NAME = "portfolio-check.log"
 log = logging.getLogger("portfolio")
 
@@ -254,3 +262,38 @@ class AboutWindow(QDialog):
     def closeEvent(self, e) -> None:
         stop_workers([getattr(self.tab, "worker", None)], 15000, interrupt=False)   # не уничтожать живой поток
         super().closeEvent(e)
+
+
+class AppAboutDialog(QDialog):
+    """«О программе»: что это, версия, ссылка на GitHub. Диагностика и лог — отдельным окном (кнопка внизу)."""
+    TEXT_W = 480
+
+    def __init__(self, open_diag=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("О программе PortfolioCheck")
+        self.setModal(False)
+        lay = QVBoxLayout(self); lay.setContentsMargins(24, 20, 24, 16); lay.setSpacing(10)
+        head = QHBoxLayout()
+        icon = QLabel()
+        svg = Path(__file__).with_name("icon.svg")
+        if svg.exists():
+            from PySide6.QtGui import QIcon
+            icon.setPixmap(QIcon(str(svg)).pixmap(64, 64))
+        self.lbl_title = QLabel(f"<b style='font-size:18px'>PortfolioCheck</b><br>версия {APP_VERSION}")
+        head.addWidget(icon); head.addWidget(self.lbl_title, 1)
+        lay.addLayout(head)
+        self.lbl_text = QLabel(ABOUT_TEXT); self.lbl_text.setWordWrap(True)
+        self.lbl_note = QLabel(DISCLAIMER); self.lbl_note.setWordWrap(True); self.lbl_note.setStyleSheet("color: gray")
+        self.lbl_link = QLabel(f'Исходный код, релизы и описание: <a href="{REPO_URL}">{REPO_URL.split("//")[1]}</a>'
+                               "<br>Лицензия MIT.")
+        self.lbl_link.setOpenExternalLinks(True); self.lbl_link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        for w in (self.lbl_text, self.lbl_note, self.lbl_link):
+            # ширина задана заранее: многострочная метка иначе считает высоту от минимальной ширины и обрезается
+            w.setFixedWidth(self.TEXT_W); w.setMinimumHeight(w.heightForWidth(self.TEXT_W))
+            lay.addWidget(w)
+        row = QHBoxLayout(); row.addStretch(1)
+        if open_diag is not None:
+            b = QPushButton("Диагностика и лог…"); b.clicked.connect(open_diag); row.addWidget(b)
+        close = QPushButton("Закрыть"); close.setDefault(True); close.clicked.connect(self.close); row.addWidget(close)
+        lay.addLayout(row)
+        self.adjustSize()

@@ -20,8 +20,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSize, QTimer, QSettings
-from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QPalette, QIcon
+from PySide6.QtCore import Qt, QSize, QTimer, QSettings, QEvent, QObject, QUrl
+from PySide6.QtGui import QDesktopServices, QAction, QColor, QFont, QKeySequence, QPalette, QIcon
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import (QButtonGroup, QRadioButton, QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox)
 from PySide6.QtWidgets import (
@@ -117,6 +117,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                 "Открыть настройки доступа" if IS_MAC else "",
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" if IS_MAC else "", retry=True)
         AI.CATALOG_DIR = paths.cache_dir()   # модель по умолчанию для OpenRouter — из живого каталога
+        self.act_log.set_store(paths.cache_dir() / activity.TIMES_FILE)   # сколько обычно длятся загрузки
         AI.load_rate_block()                           # дневной лимит, пойманный до перезапуска, ещё действует
         self.restore_layout()                      # размер окна, положение разделителей, активный экран
         if self.needs_setup():
@@ -159,13 +160,17 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         act_save = QAction("Сохранить снапшот…", self); act_save.setShortcut(QKeySequence.Save)
         act_save.triggered.connect(self.save_snapshot)
 
-        # «О программе» — отдельное окно; на macOS пункт уезжает в меню приложения (роль AboutRole)
+        # «О программе» — описание и ссылка на GitHub; на macOS пункт с ролью AboutRole уезжает в меню приложения,
+        # поэтому в «Справке» — свой пункт (без роли), иначе там его не видно
         self.act_about = QAction("О программе PortfolioCheck", self)
         self.act_about.setMenuRole(QAction.AboutRole)
-        self.act_about.triggered.connect(self.open_about)
+        self.act_about.triggered.connect(self.open_app_about)
+        self.act_about_help = QAction("О программе PortfolioCheck…", self)
+        self.act_about_help.setMenuRole(QAction.NoRole)
+        self.act_about_help.triggered.connect(self.open_app_about)
         act_quit = QAction("Выход", self); act_quit.setMenuRole(QAction.QuitRole)
         act_quit.setShortcut(QKeySequence.Quit if not QKeySequence(QKeySequence.Quit).isEmpty() else QKeySequence("Ctrl+Q"))
-        act_quit.triggered.connect(self.close)
+        act_quit.triggered.connect(self.quit_app)
 
         m_file = self.menuBar().addMenu("Файл"); self.m_file = m_file
         act_wizard = QAction("Мастер настройки…", self); act_wizard.triggered.connect(lambda: self.run_wizard(first=False))
@@ -200,7 +205,10 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         act_diag = QAction("Диагностика и лог…", self); act_diag.triggered.connect(self.open_about)
         act_check = QAction("Проверить подключения", self)
         act_check.triggered.connect(lambda: (self.open_about(), self.about_win.tab.run_checks()))
-        m_help.addAction(act_diag); m_help.addAction(act_check); m_help.addSeparator(); m_help.addAction(self.act_about)
+        act_repo = QAction("Страница проекта на GitHub", self)
+        act_repo.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(DIAG.REPO_URL)))
+        m_help.addAction(act_diag); m_help.addAction(act_check); m_help.addSeparator(); m_help.addAction(act_repo)
+        m_help.addAction(self.act_about_help); m_help.addAction(self.act_about)
 
     def _build_screen_actions(self) -> None:
         """Вид → экраны по ⌘1…⌘N (на macOS Ctrl в Qt — это ⌘)."""
@@ -210,6 +218,11 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                 a.setShortcut(QKeySequence(f"Ctrl+{i + 1}"))
             a.triggered.connect(lambda _=False, i=i: self.tabs.setCurrentIndex(i))
             self.m_view.addAction(a); self.screen_actions.append(a)
+
+    def open_app_about(self) -> None:
+        if getattr(self, "app_about", None) is None:
+            self.app_about = DIAG.AppAboutDialog(self.open_about, self)
+        self.app_about.show(); self.app_about.raise_(); self.app_about.activateWindow()
 
     def open_about(self) -> None:
         if getattr(self, "about_win", None) is None:
@@ -497,8 +510,29 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
     WORKERS = ("worker", "hist_worker", "news_worker", "scr_worker", "fair_worker", "ai_worker", "exec_worker",
                "ideas_worker", "long_worker", "factors_worker")
 
+    _quitting = False
+
+    def quit_app(self) -> None:
+        """Явный выход (⌘Q, меню «Завершить», «Завершить» в Доке): только так программа закрывается на macOS."""
+        self._quitting = True
+        QApplication.quit()
+
+    def show_again(self) -> None:
+        """Вернуть спрятанное окно (клик по значку в Доке, меню Дока)."""
+        self.showNormal() if self.isMinimized() else self.show()
+        self.raise_(); self.activateWindow()
+
     def closeEvent(self, event) -> None:
-        """Сохранить размеры окна и остановить фоновые потоки (Qt при живом QThread вызывает abort())."""
+        """Сохранить размеры окна и остановить фоновые потоки (Qt при живом QThread вызывает abort()).
+        На macOS красный кружок не завершает программу, а прячет окно: она остаётся в Доке и продолжает обновляться
+        по расписанию (раньше закрытие окна обрывало загрузку, и её никогда не хватало). Выход — явный."""
+        if IS_MAC and not self._quitting and not QApplication.quitOnLastWindowClosed():
+            self.save_layout()
+            event.ignore(); self.hide()
+            if not getattr(self, "_hid_note", False):
+                self._hid_note = True
+                log.info("окно спрятано — программа работает в Доке; выход: ⌘Q или «Завершить» в Доке")
+            return
         self.save_layout()
         self.auto_timer.stop()
         stop_workers([getattr(self, n, None) for n in self.WORKERS], 8000, terminate=True)
@@ -669,6 +703,10 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self._pipe_done: set[str] = set()
         for key, _ in self.PIPELINE:                   # весь конвейер — в журнал активности как «ожидает»
             activity.get().plan(key, self.PIPELINE_TITLES[key], note="в очереди обновления")
+        # полоска в строке состояния — по времени прошлых запусков (как в GoCD), а не «шаг из четырёх»
+        if not hasattr(self, "_pipe_timer"):
+            self._pipe_timer = QTimer(self); self._pipe_timer.timeout.connect(self._pipeline_tick)
+        self._pipe_timer.start(1000)
         self.bar.setVisible(True); self.bar.setValue(0)
         self._pipeline_render("портфель")
 
@@ -681,8 +719,17 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self._pipeline_render(running)
         if running is None:
             activity.get().skip_pending([k for k, _ in self.PIPELINE])
+            if hasattr(self, "_pipe_timer"):
+                self._pipe_timer.stop()
+            self.bar.setFormat("%p%")
             self.bar.setValue(100)
             QTimer.singleShot(2500, lambda: (self.bar.setVisible(False), self.lbl_pipeline.setText("")))
+
+    def _pipeline_tick(self) -> None:
+        frac, left, _ = activity.get().overall()
+        if frac is not None and self.bar.isVisible():
+            self.bar.setValue(max(self.bar.value(), int(frac * 100)))
+            self.bar.setFormat(f"%p% · ≈{activity.fmt_s(left)}" if left else "%p%")
 
     def _pipeline_render(self, running: str | None) -> None:
         parts = []
@@ -955,6 +1002,32 @@ def switch_to_real_profile(old: "MainWindow") -> "MainWindow":
     return w
 
 
+class _QuitWatcher(QObject):
+    """«Завершить» в Доке, выход из системы, ⌘Q из меню приложения приходят как QEvent.Quit: отмечаем выход до того,
+    как Qt закроет окна, иначе спрятанное окно отменило бы завершение."""
+    def __init__(self, win: "MainWindow"):
+        super().__init__(win)
+        self.win = win
+
+    def eventFilter(self, obj, e) -> bool:
+        if e.type() == QEvent.Quit:
+            self.win._quitting = True
+        return False
+
+
+def _mac_dock(app: QApplication, w: "MainWindow") -> None:
+    """macOS: окно прячется при закрытии; клик по значку в Доке возвращает его; в меню Дока — «Показать окно»
+    и «Обновить» (пункт «Завершить» macOS добавляет сам)."""
+    from PySide6.QtWidgets import QMenu
+    w._quit_watcher = _QuitWatcher(w); app.installEventFilter(w._quit_watcher)
+    app.applicationStateChanged.connect(
+        lambda st: w.show_again() if st == Qt.ApplicationActive and not w.isVisible() and not w._quitting else None)
+    m = QMenu(); w._dock_menu = m
+    m.addAction("Показать окно", w.show_again)
+    m.addAction("Обновить", lambda: w.refresh(manual=True))
+    m.setAsDockMenu()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", help="путь к config.yaml (по умолчанию — в папке данных)")
@@ -980,12 +1053,16 @@ def main() -> None:
         DIAG.setup_logging(paths.data_dir())  # лог с самого старта, до создания окна
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    if IS_MAC:
+        app.setQuitOnLastWindowClosed(False)       # закрытие окна — не выход: программа остаётся в Доке
     icon_path = Path(__file__).with_name("icon.svg")
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
     ensure_config(Path(args.config))
     w = MainWindow(args.config)
     WINDOWS.append(w)
+    if IS_MAC:
+        _mac_dock(app, w)
     app.aboutToQuit.connect(lambda: [x.close() for x in list(WINDOWS)])
     if guest:
         w._demo_dir = paths.DEMO_DIR

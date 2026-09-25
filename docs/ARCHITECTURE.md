@@ -80,6 +80,7 @@ Windows `%APPDATA%\PortfolioCheck\`, Linux `$XDG_DATA_HOME/PortfolioCheck/` (о�
 | `config.yaml.v<N>.bak` | копия конфига версии N перед миграцией | `config_migrate.load_and_migrate` |
 | `snapshots/YYYY-MM-DD.json` | позиции на дату (история стоимости) | `on_loaded` |
 | `cache/candles_<figi или uid>.json` | дневные свечи `[(дата, close)]`, до 6 лет (`KEEP_DAYS`); `load_cached` по умолчанию отдаёт ~400 дней | `history.fetch_candles` |
+| `cache/activity_times.json` | `{вид задачи: {title, runs: [секунды]}}` — последние 10 удачных запусков, для примерного прогресса в окне «Сеть» | `activity.Activity.finish` |
 | `cache/candles_depth.json` | `{ключ: дата}` — с какой даты уже спрашивали свечи (у молодой бумаги раньше данных нет — не спрашивать снова) | `history.fetch_candles` |
 | `cache/news.json` | лента | `news.save_cache` |
 | `cache/alerts_state.json` | какие условия оповещений выполнены сейчас (чтобы не повторять) | `alerts.new_hits` |

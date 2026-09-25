@@ -110,9 +110,24 @@ def test_menu_has_everything_for_macos(window):
 
 
 def test_about_is_a_separate_window(window):
-    window.act_about.trigger()
+    window.open_about()
     assert window.about_win.isVisible() and window.about_win.tab.lbl_env.text()
     window.about_win.close()
+
+
+def test_help_menu_has_about_with_github(window):
+    """«О программе» — в меню «Справка» (на macOS пункт с AboutRole уезжает в меню приложения, поэтому свой пункт
+    без роли): описание, версия и ссылка на GitHub."""
+    import diagnostics as DIAG
+    from PySide6.QtGui import QAction
+    helpm = next(m for m in window.menuBar().findChildren(type(window.m_file)) if m.title() == "Справка")
+    items = {a.text(): a for a in helpm.actions() if isinstance(a, QAction)}
+    a = items["О программе PortfolioCheck…"]
+    assert a.menuRole() == QAction.NoRole and "Страница проекта на GitHub" in items
+    a.trigger()
+    d = window.app_about
+    assert d.isVisible() and DIAG.REPO_URL in d.lbl_link.text() and DIAG.APP_VERSION in d.lbl_title.text()
+    d.close()
 
 
 def test_security_card_collects_everything(window, demo_positions):
@@ -224,3 +239,21 @@ def test_sort_item_keys(qapp):
     assert k("1,234.56") == 1234.56 and k("▲ +2.4%") == 2.4 and k("274.05 RUB") == 274.05 and k("−3.1") == -3.1
     assert k("2026-10-03") == "2026-10-03" and k("24.09 07:36") == "24.09 07:36" and k("SBERP") == "SBERP"
     assert k("—") is None and k("•••") is None
+
+
+def test_mac_close_hides_window_explicit_quit_closes(window, qapp, monkeypatch):
+    """Регресс: на macOS красный кружок закрывал программу целиком (ожидалось — остаётся в Доке), и фоновое
+    обновление обрывалось. Теперь закрытие прячет окно; выход — ⌘Q / «Завершить» в Доке (QEvent.Quit)."""
+    import app as A
+    from PySide6.QtCore import QEvent
+    monkeypatch.setattr(A, "IS_MAC", True)
+    qapp.setQuitOnLastWindowClosed(False)
+    try:
+        window.show(); window.close()
+        assert not window.isVisible() and not window._quitting          # спрятано, не завершено
+        window.show_again(); assert window.isVisible()
+        watcher = A._QuitWatcher(window)
+        watcher.eventFilter(qapp, QEvent(QEvent.Quit))                   # «Завершить» в Доке / выход из системы
+        assert window._quitting
+    finally:
+        qapp.setQuitOnLastWindowClosed(True)

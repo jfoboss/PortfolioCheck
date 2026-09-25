@@ -90,7 +90,7 @@ def test_button_and_window(qapp):
     act.finish("news", ok=False, note="HTTP 403")
     assert b.text() == "Сеть ✗"
     b.open_window(); w = b.win
-    assert w.tbl.rowCount() == 1 and w.tbl.item(0, 1).text() == "✗ ошибка" and w.tbl.item(0, 3).text() == "HTTP 403"
+    assert w.tbl.rowCount() == 1 and w.tbl.item(0, 1).text() == "✗ ошибка" and w.tbl.item(0, 4).text() == "HTTP 403"
     w.close()
 
 
@@ -98,3 +98,28 @@ def test_main_window_has_activity_button(window):
     assert window.btn_activity.act is window.act_log
     window.pipeline_begin()
     assert {t.state for t in window.act_log.tasks()} == {"pending"}
+
+
+def test_durations_remembered_and_progress_estimated(qapp, tmp_path):
+    """Нужен примерный прогресс (как в GoCD): время удачных запусков запоминается, по медиане рисуется полоска и
+    «осталось ≈ …»; ответ из кэша (быстрее секунды) оценку не портит."""
+    f = tmp_path / A.TIMES_FILE
+    act = A.reset(); act.set_store(f)
+    for dur in (100, 120, 110, 0.2):                      # 0.2 с — из кэша, в историю не идёт
+        act.start("news", "Новости"); act._tasks["news"].started -= dur; act.finish("news")
+    act.start("consensus:UID1", "Консенсус"); act._tasks["consensus:UID1"].started -= 4; act.finish("consensus:UID1")
+    assert act.expected("news") == 110 and act.expected("consensus:UID2") == 4      # копится по виду задачи
+    act2 = A.reset(); act2.set_store(f)                    # переживает перезапуск
+    assert act2.expected("news") == 110
+    act2.start("news", "Новости"); act2._tasks["news"].started -= 55
+    frac, left = act2.estimate(act2._tasks["news"])
+    assert abs(frac - 0.5) < 0.02 and abs(left - 55) < 2
+    assert "из ~1 мин 50 с" in A.when_text(act2._tasks["news"], expected=110)
+    act2.plan("history", "Свечи")                          # без истории — в общий процент не входит
+    ofrac, oleft, unknown = act2.overall()
+    assert abs(ofrac - 0.5) < 0.02 and unknown == 1
+    w = A.ActivityWindow(act2); w.refresh()
+    assert w.hist.rowCount() == 2 and w.hist.item(0, 2).text() == "1 мин 50 с"
+    assert w.tbl.cellWidget(0, 2) is not None or w.tbl.cellWidget(1, 2) is not None     # полоска у идущей задачи
+    act2._tasks["news"].started -= 200
+    assert "дольше обычного" in A.when_text(act2._tasks["news"], expected=110)

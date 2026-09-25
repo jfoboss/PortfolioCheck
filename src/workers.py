@@ -182,11 +182,13 @@ class ScreenerWorker(QThread):
 class AIWorker(QThread):
     done = Signal(object)      # (Summary, note)
     failed = Signal(str)
+    skipped = Signal()         # cache_only и в кэше нет — запрос не отправлялся
 
-    def __init__(self, conf: "AI.AIConfig", news_items, positions, cache_dir, force, candidates=None):
+    def __init__(self, conf: "AI.AIConfig", news_items, positions, cache_dir, force, candidates=None, cache_only=False):
         super().__init__()
         self.conf, self.news_items, self.positions = conf, news_items, positions
         self.cache_dir, self.force, self.candidates = cache_dir, force, candidates or []
+        self.cache_only = cache_only
 
     def run(self) -> None:
         c = self.conf
@@ -196,6 +198,8 @@ class AIWorker(QThread):
         hit, why = cache.get("news", fp, c.min_interval_h, self.force, subj)
         if hit:
             self.done.emit((AI.Summary(**hit), f"из кэша: {why}")); return
+        if self.cache_only:
+            self.skipped.emit(); return
         try:
             s = AI.summarize(c.provider, c.key, c.model, self.news_items, self.positions, c.proxy, c.base_url,
                              candidates=self.candidates)

@@ -169,3 +169,56 @@ def test_default_model_never_router(monkeypatch):
            {"id": "some/model:free", "free": True, "recommended": False}]
     monkeypatch.setattr(ai, "_cached_catalog", lambda: cat)
     assert ai.default_model("openrouter") == "some/model:free"
+
+
+def test_upstream_429_retried_once_and_real_model_recorded(monkeypatch):
+    """Регресс: «провайдер перегружен» сразу превращался в ошибку сводки, хотя через секунды запрос проходит
+    (руками — проходил); в шапке сводки стояла выбранная модель, даже если ответила запасная."""
+    calls, slept = [], []
+
+    def post(url, headers, body, proxy="", timeout=120):
+        calls.append(body)
+        if len(calls) == 1:
+            raise ai.RateLimited("перегружен", "upstream")
+        return {"model": "qwen/q:free", "choices": [{"message": {"content": '{"overall": "ok", "items": []}'}}]}
+    monkeypatch.setattr(ai, "_post", post)
+    monkeypatch.setattr(ai, "_sleep", slept.append)
+    monkeypatch.setattr(ai, "RATE_BLOCK_UNTIL", None)
+    s = ai.summarize("openrouter", "k", "z-ai/glm:free", [], [])
+    assert len(calls) == 2 and slept == [ai.UPSTREAM_RETRY_S] and s.model == "qwen/q:free"
+
+    calls.clear()
+    monkeypatch.setattr(ai, "_post", lambda *a, **k: (_ for _ in ()).throw(ai.RateLimited("день", "daily")))
+    with pytest.raises(ai.RateLimited):                          # дневной лимит — без повтора
+        ai.summarize("openrouter", "k", "z-ai/glm:free", [], [])
+
+
+def test_fallbacks_filled_beyond_recommended_and_check_without_them(monkeypatch):
+    """Регресс: рекомендуемых бесплатных — одна-две, и при перегрузке «запасные (qwen…) тоже не ответили»; кнопка
+    «Проверить» слала запасные — за выбранную модель мог ответить другой, и результат записывался ей."""
+    cat = [{"id": "z-ai/glm:free", "free": True, "recommended": True, "context": 128000},
+           {"id": "qwen/q:free", "free": True, "recommended": True, "context": 128000},
+           {"id": "openrouter/free", "free": True, "recommended": False, "context": 200000},
+           {"id": "tiny/m:free", "free": True, "recommended": False, "context": 8000},
+           {"id": "big/m:free", "free": True, "recommended": False, "context": 64000}]
+    monkeypatch.setattr(ai, "_cached_catalog", lambda: cat)
+    assert ai._fallbacks("z-ai/glm:free") == ["qwen/q:free", "big/m:free"]
+    seen = []
+    monkeypatch.setattr(ai, "_post", lambda url, h, body, proxy="", timeout=120:
+                        seen.append(body) or {"choices": [{"message": {"content": "{}"}}]})
+    monkeypatch.setattr(ai, "RATE_BLOCK_UNTIL", None)
+    ai.check_model("openrouter", "k", "z-ai/glm:free")
+    assert "models" not in seen[-1]
+
+
+def test_startup_ai_is_cache_only(tmp_path, monkeypatch):
+    """Регресс: при старте сводка по ленте с диска уходила в сеть, а через ~10 с — вторая по свежей ленте: два
+    бесплатных запроса подряд, оба в перегруженного провайдера. При старте — только кэш."""
+    import workers
+    monkeypatch.setattr(ai, "summarize", lambda *a, **k: pytest.fail("при старте запроса быть не должно"))
+    conf = ai.AIConfig("openrouter", "k", "z-ai/glm:free")
+    w = workers.AIWorker(conf, [], [], tmp_path, False, cache_only=True)
+    got = []
+    w.skipped.connect(lambda: got.append("skipped")); w.done.connect(got.append)
+    w.run()
+    assert got == ["skipped"]

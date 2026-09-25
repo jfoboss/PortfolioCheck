@@ -644,7 +644,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         if cached is not None:
             self._on_ideas(cached)
             if self.news_items and self.ai_enabled() and not getattr(self, "ai_summary", None):
-                QTimer.singleShot(3000, self.run_ai)     # тональность кандидатов; при совпадении данных — из кэша
+                QTimer.singleShot(3000, lambda: self.run_ai(cache_only=True))   # только из кэша: запрос — после ленты
         else:
             self.lbl_ideas.setText("Кандидатов в кэше нет — скринер запустится в фоне (проход по T-Invest ~10–20 секунд) "
                                    "или нажми «Найти».")

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import urllib.error
 import urllib.request
 
@@ -191,10 +192,42 @@ def _fallbacks(model: str, n: int = 2) -> list[str]:
     """Запасные бесплатные модели: если провайдер основной перегружен, OpenRouter сам уйдёт на следующую."""
     if not model.endswith(":free"):
         return []
-    return [m["id"] for m in _cached_catalog() if m["free"] and m["recommended"] and m["id"] != model][:n]
+    cat = [m for m in _cached_catalog() if m["free"] and m["id"] != model and not _is_router(m["id"])]
+    # сначала рекомендуемые ★, затем любые бесплатные с достаточным контекстом: рекомендуемых бывает одна-две, и
+    # при перегрузке обеих сводка падала («запасные (qwen…) тоже не ответили»)
+    rec = [m["id"] for m in cat if m["recommended"]]
+    more = [m["id"] for m in cat if not m["recommended"] and m.get("context", 0) >= MIN_CONTEXT]
+    return (rec + more)[:n]
 
 
-def _chat(provider: str, key: str, model: str, system: str, user: str, proxy: str, base_url: str, max_tokens: int = 1200) -> str:
+UPSTREAM_RETRY_S = 10     # «провайдер перегружен» — обычно на секунды: один повтор после паузы, а не сразу ошибка
+_sleep = time.sleep       # подменяется в тестах
+
+
+def _chat(provider: str, key: str, model: str, system: str, user: str, proxy: str, base_url: str, max_tokens: int = 1200,
+          fallbacks: bool = True) -> str:
+    return _chat_used(provider, key, model, system, user, proxy, base_url, max_tokens, fallbacks)[0]
+
+
+def _chat_used(provider: str, key: str, model: str, system: str, user: str, proxy: str, base_url: str,
+               max_tokens: int = 1200, fallbacks: bool = True) -> tuple[str, str]:
+    """(текст ответа, модель, которая реально ответила). С запасными моделями OpenRouter это может быть не та, что
+    выбрана в настройках, — в шапке сводки должна стоять настоящая."""
+    try:
+        return _chat_once(provider, key, model, system, user, proxy, base_url, max_tokens, fallbacks)
+    except RateLimited as e:
+        if e.kind != "upstream":
+            raise
+        wait = UPSTREAM_RETRY_S
+        if e.reset is not None:
+            wait = min(max((e.reset - datetime.now()).total_seconds(), 1), 30)
+        log.info("ИИ: провайдер перегружен — повтор через %.0f с", wait)
+        _sleep(wait)
+        return _chat_once(provider, key, model, system, user, proxy, base_url, max_tokens, fallbacks)
+
+
+def _chat_once(provider: str, key: str, model: str, system: str, user: str, proxy: str, base_url: str,
+               max_tokens: int = 1200, fallbacks: bool = True) -> tuple[str, str]:
     cfg = PROVIDERS[provider]; model = model or default_model(provider); url = base_url or cfg["url"]
     if provider == "openrouter" and model.endswith(":free") and RATE_BLOCK_UNTIL and datetime.now() < RATE_BLOCK_UNTIL:
         raise RateLimited(f"дневной лимит бесплатных моделей OpenRouter исчерпан, запросы не отправляются до "
@@ -208,25 +241,25 @@ def _chat(provider: str, key: str, model: str, system: str, user: str, proxy: st
         resp = _post(url, {"x-api-key": key, "anthropic-version": "2023-06-01"},
                      {"model": model, "max_tokens": max_tokens, "system": system,
                       "messages": [{"role": "user", "content": user}]}, proxy)
-        return "".join(b.get("text", "") for b in resp.get("content", []))
+        return "".join(b.get("text", "") for b in resp.get("content", [])), model
     if kind == "openai":
         body = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                 "temperature": 0.2}
-        if provider == "openrouter":
+        if provider == "openrouter" and fallbacks:
             fb = _fallbacks(model)
             if fb:
                 body["models"] = [model] + fb        # маршрутизация OpenRouter: при сбое провайдера — следующая модель
         resp = _post(url, _openai_headers(provider, key), body, proxy)
-        return resp["choices"][0]["message"]["content"]
+        return resp["choices"][0]["message"]["content"], str(resp.get("model") or model)
     resp = _post(url, {}, {"model": model, "stream": False, "format": "json",
                            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}, "")
-    return resp["message"]["content"]
+    return resp["message"]["content"], model
 
 
 def exec_summary(kind: str, facts: str, provider: str, key: str, model: str, proxy: str = "", base_url: str = "") -> ExecSummary:
-    text = _chat(provider, key, model, EXEC_SYSTEMS[kind], facts, proxy, base_url)
+    text, used = _chat_used(provider, key, model, EXEC_SYSTEMS[kind], facts, proxy, base_url)
     d = _extract_json(text)
-    return ExecSummary(kind, datetime.now().isoformat(timespec="minutes"), provider, model or default_model(provider),
+    return ExecSummary(kind, datetime.now().isoformat(timespec="minutes"), provider, used,
                        str(d.get("headline", "")), _lst(d.get("good")), _lst(d.get("bad")), _lst(d.get("watch")))
 
 
@@ -250,9 +283,9 @@ def exec_summary_batch(jobs: list[tuple[str, str]], provider: str, key: str, mod
     if len(jobs) == 1:
         return [exec_summary(jobs[0][0], jobs[0][1], provider, key, model, proxy, base_url)]
     user = "\n\n".join(f"===ЭКРАН: {kind}===\n{facts}" for kind, facts in jobs)
-    text = _chat(provider, key, model, EXEC_BATCH_SYSTEM, user, proxy, base_url, max_tokens=600 * len(jobs))
+    text, m = _chat_used(provider, key, model, EXEC_BATCH_SYSTEM, user, proxy, base_url, max_tokens=600 * len(jobs))
     d = _extract_json(text)
-    at = datetime.now().isoformat(timespec="minutes"); m = model or default_model(provider)
+    at = datetime.now().isoformat(timespec="minutes")
     out = []
     for kind, _ in jobs:
         part = d.get(kind) or {}
@@ -466,14 +499,14 @@ def build_prompt(news_items, positions, max_news: int = 60, candidates=None) -> 
 def summarize(provider: str, key: str, model: str, news_items, positions, proxy: str = "", base_url: str = "",
               candidates=None) -> Summary:
     prompt = build_prompt(news_items, positions, candidates=candidates)
-    text = _chat(provider, key, model, SYSTEM, prompt, proxy, base_url, max_tokens=1500)
+    text, used = _chat_used(provider, key, model, SYSTEM, prompt, proxy, base_url, max_tokens=1500)
     data = _extract_json(text)
     items = []
     for it in data.get("items", []) or []:
         s = str(it.get("sentiment", "neutral")).lower()
         s = "positive" if s.startswith("pos") else ("negative" if s.startswith("neg") else "neutral")
         items.append({"ticker": str(it.get("ticker", "")), "sentiment": s, "note": str(it.get("note", ""))})
-    return Summary(datetime.now().isoformat(timespec="minutes"), provider, model or default_model(provider),
+    return Summary(datetime.now().isoformat(timespec="minutes"), provider, used,
                    str(data.get("overall", "")), str(data.get("macro", "")), items, len(news_items))
 
 
@@ -531,7 +564,8 @@ def check_model(provider: str, key: str, model: str, proxy: str = "", base_url: 
     """Один запрос: годится ли модель для сводок. Результат сохраняется по id модели (cache/ai_model_checks.json)."""
     model = model or default_model(provider)
     t0 = datetime.now()
-    text = _chat(provider, key, model, CHECK_SYSTEM, CHECK_USER, proxy, base_url, max_tokens=200)
+    # без запасных: проверяется именно выбранная модель, иначе за неё мог ответить кто-то из запасных
+    text = _chat(provider, key, model, CHECK_SYSTEM, CHECK_USER, proxy, base_url, max_tokens=200, fallbacks=False)
     res = {**evaluate_check(text), "model": model, "provider": provider, "at": datetime.now().isoformat(timespec="seconds"),
            "seconds": round((datetime.now() - t0).total_seconds(), 1), "answer": text.strip()[:300]}
     if cache_dir is not None:

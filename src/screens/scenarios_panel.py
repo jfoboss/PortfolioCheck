@@ -12,6 +12,7 @@ import factors as FA
 import history as H
 import macro
 import paths
+import activity
 import portfolio_check as pc
 import scenarios as SC
 from charts import DivergingBarChart
@@ -67,7 +68,9 @@ class ScenariosMixin:
             return
         if is_running(getattr(self, "factors_worker", None)):
             return
-        self.factors_worker = FactorsWorker(cache, get_token())
+        self.factors_worker = activity.get().track(
+            FactorsWorker(cache, get_token()), "factors", "Факторы сценариев и календарь ЦБ",
+            done_note=lambda st: "; ".join(f"{k}: {v}" for k, v in st.items() if v != "ok")[:200])
         self.factors_worker.done.connect(self._on_factors)
         self.factors_worker.start()
 

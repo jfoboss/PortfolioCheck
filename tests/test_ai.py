@@ -222,3 +222,18 @@ def test_startup_ai_is_cache_only(tmp_path, monkeypatch):
     w.skipped.connect(lambda: got.append("skipped")); w.done.connect(got.append)
     w.run()
     assert got == ["skipped"]
+
+
+def test_exec_summaries_run_after_failed_news_summary(window, monkeypatch):
+    """Регресс: сводка экранов запускалась только после УДАЧНОЙ сводки новостей — при днях «провайдер перегружен»
+    экраны неделями показывали сводки от 19–22 сентября, а в логе не было ни одной попытки их обновить."""
+    import screens.news as SN
+    fired = []
+    monkeypatch.setattr(SN.QTimer, "singleShot", lambda ms, fn: fired.append(ms))
+    monkeypatch.setattr(ai, "RATE_BLOCK_UNTIL", None)
+    window._on_ai_failed("перегружен", ai.AIConfig("openrouter", "k", "z-ai/glm:free"))
+    assert SN.EXEC_AFTER_FAIL_MS in fired
+    fired.clear()
+    monkeypatch.setattr(ai, "RATE_BLOCK_UNTIL", datetime(2999, 1, 1))
+    window._on_ai_failed("дневной лимит", ai.AIConfig("openrouter", "k", "z-ai/glm:free"))
+    assert SN.EXEC_AFTER_FAIL_MS not in fired                       # дневной лимит — экраны не дёргаем

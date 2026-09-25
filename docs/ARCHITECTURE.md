@@ -10,6 +10,7 @@ app.py  ── каркас главного окна: сборка UI, меню
   ├─ screens/            ── экраны как миксины MainWindow: history (история, тепловая карта), news (лента, ИИ-сводка),
   │                         summaries (ИИ-сводки экранов), ideas (скринер), privacy («глазик»), overview (отрисовка)
   ├─ workers.py          ── фоновые загрузки (QThread)
+  ├─ activity.py         ── журнал сетевой активности: задачи воркеров (ожидает/идёт/повтор/готово/ошибка/таймаут), кнопка «Сеть» и окно
   ├─ widgets.py          ── BusySpinner, BadgeDelegate
   ├─ ui_common.py        ── имя приложения, цвета подсветки, get_token, ensure_config
   ├─ settings_dialog.py  ── окно настроек (11 вкладок), каталог моделей, проверка RSS

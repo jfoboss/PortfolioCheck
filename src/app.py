@@ -35,6 +35,7 @@ from settings_dialog import SettingsDialog
 from forecast import ForecastTab
 from charts import PieChart, BarChart, RangeBarChart, DivergingBarChart, TreemapChart, LineChart
 import paths
+import activity
 import history as H
 import diagnostics as DIAG
 import ai as AI
@@ -234,6 +235,11 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         tb.addAction(self.act_setup)
         tb.addAction(self.act_refresh)
         tb.addAction(self.act_privacy)
+        # общий индикатор обмена по сети: крутится, пока идёт загрузка или ждём ИИ; клик — окно с шагами
+        self.act_log = activity.get()
+        self.btn_activity = activity.ActivityButton(self.act_log, self)
+        tb.addWidget(self.btn_activity)
+        AI.ON_RETRY = self.act_log.retry_current; AI.ON_RESUME = self.act_log.resume_current
         spacer = QWidget(); spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred); tb.addWidget(spacer)
         tb.addAction(self.act_prefs)             # настройки — справа, как в приложениях macOS
         self.addToolBar(tb)
@@ -656,8 +662,13 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
     # ---- конвейер фоновой загрузки: портфель → свечи → новости → идеи ----------
     PIPELINE = [("portfolio", "портфель"), ("history", "свечи"), ("news", "новости"), ("ideas", "идеи")]
 
+    PIPELINE_TITLES = {"portfolio": "Портфель (T-Invest)", "history": "Свечи (T-Invest)", "news": "Новости (RSS)",
+                       "ideas": "Скринер кандидатов (T-Invest)"}
+
     def pipeline_begin(self) -> None:
         self._pipe_done: set[str] = set()
+        for key, _ in self.PIPELINE:                   # весь конвейер — в журнал активности как «ожидает»
+            activity.get().plan(key, self.PIPELINE_TITLES[key], note="в очереди обновления")
         self.bar.setVisible(True); self.bar.setValue(0)
         self._pipeline_render("портфель")
 
@@ -669,6 +680,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.bar.setValue(int(100 * len(self._pipe_done) / len(self.PIPELINE)))
         self._pipeline_render(running)
         if running is None:
+            activity.get().skip_pending([k for k, _ in self.PIPELINE])
             self.bar.setValue(100)
             QTimer.singleShot(2500, lambda: (self.bar.setVisible(False), self.lbl_pipeline.setText("")))
 
@@ -751,7 +763,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         if is_running(getattr(self, "fair_worker", None)):
             return
         self.set_status("Пересчитываю цены заблокированных…")
-        self.fair_worker = FairPriceWorker(token, self.cfg, self.positions)
+        self.fair_worker = activity.get().track(FairPriceWorker(token, self.cfg, self.positions), "fair",
+                                                "Цены заблокированных (T-Invest)")
         self.fair_worker.done.connect(self._on_fair_done)
         self.fair_worker.failed.connect(lambda m: (log.error("цены эталонов: %s", m), self.set_status(f"Не удалось пересчитать цены эталонов: {m[:100]}")))
         self.fair_worker.start()
@@ -789,7 +802,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         self.act_refresh.setEnabled(False)
         self.pipeline_begin()
         self.set_status("Загружаю портфель…")
-        self.worker = LoadWorker(token, self.cfg)
+        self.worker = activity.get().track(LoadWorker(token, self.cfg), "portfolio", "Портфель (T-Invest)")
         self.worker.done.connect(self.on_loaded)
         self.worker.failed.connect(self.on_failed)
         self.worker.start()

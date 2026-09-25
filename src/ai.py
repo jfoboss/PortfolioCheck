@@ -202,6 +202,10 @@ def _fallbacks(model: str, n: int = 2) -> list[str]:
 
 UPSTREAM_RETRY_S = 10     # «провайдер перегружен» — обычно на секунды: один повтор после паузы, а не сразу ошибка
 _sleep = time.sleep       # подменяется в тестах
+# Сообщить журналу активности о паузе повтора (приложение подставляет activity.retry_current / resume_current);
+# ai.py не зависит от Qt
+ON_RETRY = None           # (секунд, пояснение) -> None
+ON_RESUME = None          # () -> None
 
 
 def _chat(provider: str, key: str, model: str, system: str, user: str, proxy: str, base_url: str, max_tokens: int = 1200,
@@ -222,7 +226,11 @@ def _chat_used(provider: str, key: str, model: str, system: str, user: str, prox
         if e.reset is not None:
             wait = min(max((e.reset - datetime.now()).total_seconds(), 1), 30)
         log.info("ИИ: провайдер перегружен — повтор через %.0f с", wait)
+        if ON_RETRY:
+            ON_RETRY(wait, f"{model or default_model(provider)}: провайдер перегружен")
         _sleep(wait)
+        if ON_RESUME:
+            ON_RESUME()
         return _chat_once(provider, key, model, system, user, proxy, base_url, max_tokens, fallbacks)
 
 
@@ -249,8 +257,14 @@ def _chat_once(provider: str, key: str, model: str, system: str, user: str, prox
             fb = _fallbacks(model)
             if fb:
                 body["models"] = [model] + fb        # маршрутизация OpenRouter: при сбое провайдера — следующая модель
+        # каждая попытка — в лог: иначе при долгом ответе (рассуждающие бесплатные модели думают минутами) не видно,
+        # что запрос вообще ушёл
+        log.info("ИИ: запрос к %s/%s%s", provider, model, f" (запасные: {', '.join(body['models'][1:])})" if "models" in body else "")
+        t0 = time.monotonic()
         resp = _post(url, _openai_headers(provider, key), body, proxy)
-        return resp["choices"][0]["message"]["content"], str(resp.get("model") or model)
+        used = str(resp.get("model") or model)
+        log.info("ИИ: ответ за %.0f с от %s", time.monotonic() - t0, used)
+        return resp["choices"][0]["message"]["content"], used
     resp = _post(url, {}, {"model": model, "stream": False, "format": "json",
                            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}, "")
     return resp["message"]["content"], model
@@ -383,6 +397,11 @@ def set_rate_block(until: datetime) -> None:
         (CATALOG_DIR / RATE_BLOCK_FILE).write_text(json.dumps({"until": until.isoformat()}), encoding="utf-8")
     except OSError as e:
         log.warning("не удалось сохранить блокировку лимита: %s", e)
+
+
+def rate_block_until() -> datetime | None:
+    """До какого времени запросы к бесплатным моделям не отправляются (дневной лимит); None — ограничения нет."""
+    return RATE_BLOCK_UNTIL if RATE_BLOCK_UNTIL and RATE_BLOCK_UNTIL > datetime.now() else None
 
 
 def load_rate_block() -> datetime | None:

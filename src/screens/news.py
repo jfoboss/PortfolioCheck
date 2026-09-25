@@ -20,6 +20,9 @@ from workers import NewsWorker, AIWorker
 from widgets import is_running
 
 
+EXEC_GAP_MS = 5000      # между сводкой новостей и сводкой экранов
+
+
 class NewsMixin:
     # ---- новости ------------------------------------------------------------
 
@@ -121,7 +124,10 @@ class NewsMixin:
         """Настройки ИИ + ключ из хранилища; None — ключа нет (ИИ выключен)."""
         return AI.resolve(self.cfg.get("ai"))
 
-    def run_ai(self, manual: bool = False) -> None:
+    def run_ai(self, manual: bool = False, cache_only: bool = False) -> None:
+        """cache_only — при старте по ленте с диска: только готовый ответ из кэша, без запроса. Свежий запрос уйдёт
+        один раз, когда загрузится лента (раньше при старте уходило два запроса за ~10 с — оба в перегруженного
+        провайдера бесплатной модели)."""
         conf = self.ai_conf()
         items = getattr(self, "news_items", [])
         if not items:
@@ -131,16 +137,32 @@ class NewsMixin:
         if conf is None:
             msg = "ИИ-сводка: ключ не задан — Настройки → ИИ."
             self.set_status(msg); self.ai_panel.setPlainText(msg); return
-        if is_running(getattr(self, "ai_worker", None)):
+        running = getattr(self, "ai_worker", None)
+        if is_running(running):
+            if running.cache_only and not cache_only:
+                self._ai_pending = True          # проверка кэша закончится за миг — тогда и запустим
             return
+        self._ai_pending = False
         self.btn_ai.setEnabled(False); self.set_status(f"ИИ-сводка ({conf.provider})…")
         for p in (self.ai_panel, self.ai_small):
             p.spinner.start("Модель читает новости — показана прошлая сводка")
         cands = (getattr(self, "_last_screen", None).ideas[:15] if getattr(self, "_last_screen", None) else [])
-        self.ai_worker = AIWorker(conf, items, self.positions, paths.cache_dir(), manual, cands)
+        self.ai_worker = AIWorker(conf, items, self.positions, paths.cache_dir(), manual, cands, cache_only=cache_only)
         self.ai_worker.done.connect(self._on_ai)
+        self.ai_worker.skipped.connect(self._on_ai_skipped)
         self.ai_worker.failed.connect(lambda m: self._on_ai_failed(m, conf))
         self.ai_worker.start()
+
+    def _on_ai_skipped(self) -> None:
+        self.btn_ai.setEnabled(True)
+        for p in (self.ai_panel, self.ai_small):
+            p.spinner.stop()
+        self._run_ai_pending()
+
+    def _run_ai_pending(self) -> None:
+        if getattr(self, "_ai_pending", False):
+            self._ai_pending = False
+            QTimer.singleShot(0, self.run_ai)
 
     def _on_ai_failed(self, msg: str, conf: "AI.AIConfig") -> None:
         """Ошибка свежего запроса: называем модель, к которой ходили, и чья сводка осталась на экране — иначе
@@ -154,6 +176,7 @@ class NewsMixin:
         shown = (f" — показана прошлая сводка ({old.model}, {old.at.replace('T', ' ')})" if old is not None
                  else "")
         self.set_status(f"ИИ-сводка ({model}) не удалась: {msg[:160]}{shown}")
+        self._run_ai_pending()
 
     def _on_ai(self, result) -> None:
         summary, note = result if isinstance(result, tuple) else (result, "")
@@ -169,7 +192,9 @@ class NewsMixin:
         if res is not None and res.ideas:
             self._on_ideas(res)     # тональность из свежей сводки подхватится в annotate_ideas
         force = getattr(self, "_exec_force", False); self._exec_force = False
-        QTimer.singleShot(0, lambda: self.run_exec(manual=force))
+        # после свежего запроса — пауза: второй запрос сразу вслед бесплатная модель часто встречает 429 «перегружен»
+        QTimer.singleShot(0 if note else EXEC_GAP_MS, lambda: self.run_exec(manual=force))
+        self._run_ai_pending()
 
     def render_ai(self) -> None:
         s = getattr(self, "ai_summary", None) or AI.load_summary(paths.cache_dir())

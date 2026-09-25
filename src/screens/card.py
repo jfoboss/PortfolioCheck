@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QSplitter, QTableWi
 import history as H
 import news as NEWS
 import paths
+import activity
 import portfolio_check as pc
 import style as SY
 from charts import LineChart
@@ -207,7 +208,9 @@ class SecurityCard(QDialog):
         token = get_token()
         if not token or is_running(getattr(self, "_fw", None)):
             return
-        self._fw = ForecastWorker(token, uid, cache, self)
+        self._fw = activity.get().track(ForecastWorker(token, uid, cache, self), f"consensus:{uid}",
+                                        "Консенсус аналитиков (T-Invest)",
+                                        done_note=lambda d: (d or {}).get("error", "") if isinstance(d, dict) else "")
         self._fw.done.connect(lambda data: (setattr(self, "_forecast", data), self.refresh()))
         self._fw.start()
 

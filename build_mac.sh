@@ -32,6 +32,7 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --collect-all tinkoff \
   --hidden-import settings_dialog \
   --hidden-import forecast \
+  --hidden-import activity \
   --hidden-import charts \
   --hidden-import macro \
   --hidden-import paths \

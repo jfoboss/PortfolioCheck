@@ -9,6 +9,7 @@ from decimal import Decimal
 
 import portfolio_check as pc
 import paths
+import activity
 import history as H
 import ai as AI
 from diagnostics import log
@@ -105,6 +106,7 @@ class ExecSummaryMixin:
     def run_exec(self, manual: bool = False) -> None:
         conf = self.ai_conf()
         if conf is None or not self.positions:
+            activity.get().skip_pending(["ai_exec"])
             if manual:
                 self.set_status("ИИ-сводки: нужен ключ (Настройки → ИИ) и загруженный портфель.")
             return
@@ -115,7 +117,8 @@ class ExecSummaryMixin:
         for kind, _ in jobs:
             self.exec_panels[kind].spinner.start("Модель готовит сводку — показана прошлая")
         self.set_status(f"ИИ-сводки по экранам ({conf.provider})… показаны прошлые")
-        self.exec_worker = ExecWorker(conf, jobs, paths.cache_dir(), manual)
+        self.exec_worker = activity.get().track(ExecWorker(conf, jobs, paths.cache_dir(), manual), "ai_exec",
+                                                f"ИИ-сводки по экранам ({len(jobs)})")
         self.exec_worker.one.connect(self._on_exec_one)
         self.exec_worker.failed.connect(lambda m: (log.error("ИИ-сводка экрана: %s", m), self.set_status(f"ИИ-сводка: {m[:120]}"),
                                                    [p.spinner.stop() for p in self.exec_panels.values()]))

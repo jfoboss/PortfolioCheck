@@ -10,6 +10,7 @@ from PySide6.QtCore import QTimer
 
 import portfolio_check as pc
 import paths
+import activity
 import history as H
 from diagnostics import log
 from ui_common import get_token
@@ -27,7 +28,8 @@ class HistoryMixin:
             self.pipeline_step("history", "новости"); self.refresh_news(); return
         if is_running(getattr(self, "hist_worker", None)):
             return
-        self.hist_worker = HistoryWorker(token, self.cfg, self.positions, paths.cache_dir())
+        self.hist_worker = activity.get().track(HistoryWorker(token, self.cfg, self.positions, paths.cache_dir()),
+                                                "history", "Свечи (T-Invest)")
         self.hist_worker.done.connect(self._on_history)
         self.hist_worker.failed.connect(lambda m: (log.error("история/свечи: %s", m), self.set_status(f"История не загружена: {m[:100]}"),
                                                    self.pipeline_step("history", "новости"), self.refresh_news()))
@@ -140,7 +142,8 @@ class HistoryMixin:
         if is_running(getattr(self, "long_worker", None)):
             return
         self.set_status(f"Загружаю историю за {years:.0f} г…")
-        self.long_worker = LongHistoryWorker(token, self.cfg, self.positions, paths.cache_dir(), years)
+        self.long_worker = activity.get().track(LongHistoryWorker(token, self.cfg, self.positions, paths.cache_dir(), years),
+                                                "long_history", f"История за {years:.0f} г (T-Invest)")
         self.long_worker.progress.connect(self.set_status)
         self.long_worker.done.connect(lambda r: self._on_long_history(r, years))
         self.long_worker.failed.connect(lambda m: (log.error("длинная история: %s", m), self.set_status(f"История не загружена: {m[:100]}")))

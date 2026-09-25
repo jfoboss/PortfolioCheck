@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor
 
 import portfolio_check as pc
 import paths
+import activity
 import payouts as PO
 import style as SY
 from diagnostics import log
@@ -84,7 +85,8 @@ class IdeasMixin:
             return
         if is_running(getattr(self, "ideas_worker", None)):
             return
-        self.ideas_worker = IdeasEnrichWorker(token, ideas, paths.cache_dir())
+        self.ideas_worker = activity.get().track(IdeasEnrichWorker(token, ideas, paths.cache_dir()), "ideas_enrich",
+                                                 "Кандидаты: свечи и выплаты (T-Invest)")
         self.ideas_worker.done.connect(self._on_ideas_enriched)
         self.ideas_worker.failed.connect(lambda m: log.warning("свечи кандидатов: %s", m))
         self.ideas_worker.start()
@@ -144,8 +146,8 @@ class IdeasMixin:
         token = get_token()
         if not token:
             self.lbl_ideas.setText("Скринер работает через T-Invest API — нужен токен (Настройки → Доступ)."); self.pipeline_step("ideas", None); return
-        self.scr_worker = ScreenerWorker(token, self.sp_min_yield.value(), float(self.sp_min_cap.value()), self.sp_max_debt.value(),
-                                         exclude, paths.cache_dir(), force=not auto)
+        self.scr_worker = activity.get().track(ScreenerWorker(token, self.sp_min_yield.value(), float(self.sp_min_cap.value()), self.sp_max_debt.value(),
+                                         exclude, paths.cache_dir(), force=not auto), "ideas", "Скринер кандидатов (T-Invest)")
         self.scr_worker.filters = self._screener_filters()
         self.scr_worker.progress.connect(self.set_status)
         self.scr_worker.done.connect(self._on_ideas)

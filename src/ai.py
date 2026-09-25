@@ -202,6 +202,10 @@ def _fallbacks(model: str, n: int = 2) -> list[str]:
 
 UPSTREAM_RETRY_S = 10     # «провайдер перегружен» — обычно на секунды: один повтор после паузы, а не сразу ошибка
 _sleep = time.sleep       # подменяется в тестах
+# Сообщить журналу активности о паузе повтора (приложение подставляет activity.retry_current / resume_current);
+# ai.py не зависит от Qt
+ON_RETRY = None           # (секунд, пояснение) -> None
+ON_RESUME = None          # () -> None
 
 
 def _chat(provider: str, key: str, model: str, system: str, user: str, proxy: str, base_url: str, max_tokens: int = 1200,
@@ -222,7 +226,11 @@ def _chat_used(provider: str, key: str, model: str, system: str, user: str, prox
         if e.reset is not None:
             wait = min(max((e.reset - datetime.now()).total_seconds(), 1), 30)
         log.info("ИИ: провайдер перегружен — повтор через %.0f с", wait)
+        if ON_RETRY:
+            ON_RETRY(wait, f"{model or default_model(provider)}: провайдер перегружен")
         _sleep(wait)
+        if ON_RESUME:
+            ON_RESUME()
         return _chat_once(provider, key, model, system, user, proxy, base_url, max_tokens, fallbacks)
 
 

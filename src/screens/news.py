@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 import paths
+import activity
 import ai as AI
 from diagnostics import log
 import news as NEWS
@@ -35,7 +36,9 @@ class NewsMixin:
         feeds = self.cfg.get("news", {}).get("feeds") or NEWS.DEFAULT_FEEDS
         aliases = self.cfg.get("news", {}).get("aliases") or {}
         self.btn_news.setEnabled(False); self.set_status("Загружаю новости…")
-        self.news_worker = NewsWorker(feeds, self.positions, aliases, self.bundle_path())
+        self.news_worker = activity.get().track(
+            NewsWorker(feeds, self.positions, aliases, self.bundle_path()), "news", "Новости (RSS)",
+            done_note=lambda r: f"{len(r[0])} по бумагам" + (f", недоступны лент: {len(r[1])}" if r[1] else ""))
         self.news_worker.done.connect(self._on_news); self.news_worker.start()
 
     def _on_news(self, result) -> None:
@@ -148,7 +151,9 @@ class NewsMixin:
         for p in (self.ai_panel, self.ai_small):
             p.spinner.start("Модель читает новости — показана прошлая сводка")
         cands = (getattr(self, "_last_screen", None).ideas[:15] if getattr(self, "_last_screen", None) else [])
-        self.ai_worker = AIWorker(conf, items, self.positions, paths.cache_dir(), manual, cands, cache_only=cache_only)
+        self.ai_worker = activity.get().track(
+            AIWorker(conf, items, self.positions, paths.cache_dir(), manual, cands, cache_only=cache_only),
+            "ai_news", "ИИ-сводка по новостям", done_note=lambda r: r[1] or f"ответила {r[0].model}")
         self.ai_worker.done.connect(self._on_ai)
         self.ai_worker.skipped.connect(self._on_ai_skipped)
         self.ai_worker.failed.connect(lambda m: self._on_ai_failed(m, conf))
@@ -181,6 +186,8 @@ class NewsMixin:
         # «провайдер перегружен» экраны неделями показывали старьё. Дневной лимит — не пытаемся (всё равно откажет)
         if AI.rate_block_until() is None:
             force = getattr(self, "_exec_force", False); self._exec_force = False
+            activity.get().plan("ai_exec", "ИИ-сводки по экранам", EXEC_AFTER_FAIL_MS / 1000,
+                                "после неудачной сводки новостей")
             QTimer.singleShot(EXEC_AFTER_FAIL_MS, lambda: self.run_exec(manual=force))
         self._run_ai_pending()
 
@@ -199,7 +206,10 @@ class NewsMixin:
             self._on_ideas(res)     # тональность из свежей сводки подхватится в annotate_ideas
         force = getattr(self, "_exec_force", False); self._exec_force = False
         # после свежего запроса — пауза: второй запрос сразу вслед бесплатная модель часто встречает 429 «перегружен»
-        QTimer.singleShot(0 if note else EXEC_GAP_MS, lambda: self.run_exec(manual=force))
+        gap = 0 if note else EXEC_GAP_MS
+        if gap:
+            activity.get().plan("ai_exec", "ИИ-сводки по экранам", gap / 1000, "пауза после сводки новостей")
+        QTimer.singleShot(gap, lambda: self.run_exec(manual=force))
         self._run_ai_pending()
 
     def render_ai(self) -> None:

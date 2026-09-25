@@ -74,12 +74,13 @@ class NewsMixin:
                 else:
                     tag, tag_tip, tag_color = "макро", "Ставка ЦБ, инфляция, рубль, дивиденды", "#7F8C8D"
                 short, full, scolor = NEWS.source_badge(it.source)
-                if it.published:
-                    when = it.published.strftime("%H:%M") if it.published.date() == today else it.published.strftime("%d.%m")
+                pub = it.published.astimezone() if it.published else None    # местное время: у лент свои пояса (Frank — UTC)
+                if pub:
+                    when = pub.strftime("%H:%M") if pub.date() == today else pub.strftime("%d.%m")
                 else:
                     when = "—"
                 cells = [(tag, tag_tip, tag_color), (short, full, scolor),
-                         (when, it.published.strftime("%d.%m.%Y %H:%M") if it.published else "", None),
+                         (when, pub.strftime("%d.%m.%Y %H:%M") if pub else "", None),
                          (it.title, it.summary or it.title, None)]
                 for c, (val, tip, color) in enumerate(cells):
                     item = QTableWidgetItem(val)

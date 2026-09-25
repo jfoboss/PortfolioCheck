@@ -1,3 +1,4 @@
+import io
 from datetime import date, timedelta
 
 import history as H
@@ -46,10 +47,10 @@ def _rss(*items):
 
 class _Resp:
     def __init__(self, data):
-        self.data = data
+        self.data = io.BytesIO(data)
 
-    def read(self):
-        return self.data
+    def read(self, n=-1):
+        return self.data.read(n)
 
     def __enter__(self):
         return self
@@ -182,3 +183,140 @@ def test_news_offtopic_and_ambiguous_aliases():
                    "Мосбиржа запустила новые торги": ["MOEX"]}
     assert not N.refers("сборная завоевала золото", kw["GLDRUB_TOM"])
     assert N.refers("цены на золото растут", kw["GLDRUB_TOM"])
+
+
+def test_news_source_rules_funds_and_entities():
+    """Регресс: smart-lab (блоги) привязывал посты к бумагам и «макро» по тексту поста («Портфель на 23 сентября» →
+    AGRO, «Человек и пароход» → макро); служебные сообщения Мосбиржи шли как новости акции MOEX; заметка РБК про кино
+    («отработать технологии съемок») привязывалась к фонду TECH по слову из названия; в заголовках — «&quot;»."""
+    pos = [NS(ticker="AGRO", name="Русагро", instrument_type="share"), NS(ticker="MOEX", name="Московская Биржа"),
+           NS(ticker="TECH", name="Технологии 100", instrument_type="etf"), NS(ticker="SBERP", name="Сбербанк")]
+    kw = N.build_keywords(pos, N.DEFAULT_ALIASES)
+    assert kw["TECH"] == ["TECH"]                                         # у фонда — только тикер и алиасы
+
+    def it(title, summary="", source="rbc.ru"):
+        return N.NewsItem(title, "", source, None, [], summary)
+    items = [it("Портфель на 23 сентября 2026 г.", "держу Русагро, жду дивиденд", "smart-lab.ru"),
+             it("Человек и пароход", "про ключевая ставка и дивиденд", "smart-lab.ru"),
+             it("Русагро: разбор отчётности", "", "smart-lab.ru"),
+             it("О начале торгов ценными бумагами", "Московская биржа сообщает", "moex.com"),
+             it("Об исключении ценных бумаг", "облигации ПАО Сбербанк исключены", "moex.com"),
+             it("Режиссер рассказал, почему время сказок в кино уходит", "Сказки позволили отработать технологии съемок")]
+    got = {x.title: x.matched for x in N.match(items, kw)}
+    assert got == {"Русагро: разбор отчётности": ["AGRO"]}          # у Мосбиржи — только заголовок, самой MOEX нет
+    feed = (b"<rss><channel><item><title>O &amp;quot;25&amp;quot; ok</title><description>&amp;laquo;x&amp;raquo;"
+            b"</description></item></channel></rss>")
+    one = N.parse_feed(feed, "moex.com")[0]
+    assert one.title == 'O "25" ok' and one.summary == "«x»"
+
+
+def test_feed_namespace_html_check_age_and_moex_technical(monkeypatch):
+    """Регресс: retail.ru (RSS с xmlns по умолчанию) выглядел пустой лентой; Forbes/Банки.ру отдают страницу
+    «вы не робот» — «Проверить» писал «нет элементов <item>»; лента Мосбиржи — 1000+ техсообщений за два месяца
+    (ценовые коридоры МТС, размещения облигаций «Сбербанк КИБ») привязывались к бумагам портфеля."""
+    from datetime import datetime, timedelta, timezone
+    ns = (b'<rss version="2.0" xmlns="http://backend.userland.com/rss2"><channel><item><title>A</title>'
+          b'<link>u</link><pubDate>Fri, 19 Sep 2026 05:00:00 +0300</pubDate></item></channel></rss>')
+    got = N.parse_feed(ns, "retail.ru")
+    assert [(i.title, i.link) for i in got] == [("A", "u")] and got[0].published is not None
+    monkeypatch.setattr(N.net, "fetch", lambda url, timeout=10: b"<html><head><meta name='robots'></head></html>")
+    ok, msg = N.check_feed("https://www.forbes.ru/newrss.xml")
+    assert not ok and "защита от ботов" in msg
+
+    now = datetime.now(timezone.utc)
+    pos = [NS(ticker="MTSS", name="МТС"), NS(ticker="SBERP", name="Сбербанк")]
+
+    def item(title, days, src="moex.com"):
+        return N.NewsItem(title, "", src, now - timedelta(days=days), [], "")
+    items = [item("12.08, изменены значения верхней границы ценового коридора и диапазона оценки МТС", 0),
+             item("Об отмене размещения облигаций серии CIB-001 АО «Сбербанк КИБ»", 0),
+             item("Сбербанк присоединился к торгам на новом рынке", 0),
+             item("МТС отчиталась о выручке", 30, "interfax.ru"),
+             item("МТС отчиталась о прибыли", 1, "interfax.ru")]
+    monkeypatch.setattr(N, "parse_feed", lambda data, src: [i for i in items if i.source == src])
+    monkeypatch.setattr(N.net, "fetch", lambda url, timeout=12: b"")
+    got, failed = N.fetch_news(["https://www.moex.com/x", "https://interfax.ru/rss"], pos, {})
+    assert [i.title for i in got] == ["Сбербанк присоединился к торгам на новом рынке", "МТС отчиталась о прибыли"]
+
+
+def test_alias_word_boundaries_currency_and_gold_adjectives():
+    """Регресс (проверка на всех живых лентах): «Сбер» ловил «сбережения» («ЦБ отмечает изменения в структуре
+    сбережений» → SBERP); «Доллар США» — любые «$11 млрд» и «108 долларов за баррель» по слову из названия;
+    «золот» — прилагательные («CRE Federal Awards … золотой»)."""
+    pos = [NS(ticker="SBERP", name="Сбербанк"), NS(ticker="USD000UTSTOM", name="Доллар США", instrument_type="currency"),
+           NS(ticker="GLDRUB_TOM", name="Золото", instrument_type="currency")]
+    kw = N.build_keywords(pos, N.DEFAULT_ALIASES)
+    r = lambda t, k: N.refers(t.lower(), kw[k])
+    assert not r("ЦБ отмечает изменения в структуре сбережений россиян", "SBERP")
+    assert r("Глава «Сбера» подтвердил планы", "SBERP") and r("Сбер открыл стадион", "SBERP")
+    assert not r("SoftBank выпустил облигации на сумму свыше $11 млрд долларов", "USD000UTSTOM")
+    assert not r("Цена на нефть марки Brent превысила 108 долларов за баррель", "USD000UTSTOM")
+    assert r("ЦБ повысил официальный курс доллара на 25 сентября", "USD000UTSTOM")
+    assert not r("Золотой юбилей рынка недвижимости: премия на рынке", "GLDRUB_TOM")
+    assert r("Минфин предложил повысить спрос на физическое золото на рынке", "GLDRUB_TOM")
+
+
+def test_long_keys_whole_word_with_case_endings():
+    """Регресс: ключи от 6 букв искались с начала слова с любым продолжением — «Магнит» ловил «магнитные бури»,
+    «Газпром» — «Газпромбанк», а «Роснефть», «Татнефть», «Мосбиржа» не находили «Роснефти», «Татнефти», «Мосбирже»
+    (в косвенном падеже меняется последняя буква). Прогон на живых лентах."""
+    assert not N.mentions("россиянам назвали причину усиления магнитных бурь", "Магнит")
+    assert not N.mentions("газпромбанк снизил ставки", "Газпром")
+    assert N.mentions("выручка «магнита» выросла", "Магнит") and N.mentions("у «газпрома» рекорд", "Газпром")
+    assert N.mentions("эксперты убрали из топа акции «роснефти»", "Роснефть")
+    assert N.mentions("акционеры «татнефти» проголосуют", "Татнефть") and N.mentions("торги на мосбирже", "Мосбиржа")
+    assert N.mentions("активов лукойла", "ЛУКОЙЛ") and N.mentions("выручка «норникеля»", "Норникель")
+
+
+def test_adjective_names_and_exchange_index():
+    """Регресс: название на прилагательное («Корпоративный центр ИКС 5») давало ключ «Корпоративный» — к бумаге
+    липли «корпоративные облигации» и «корпоративный кредит». А «индекс Мосбиржи» — это рынок целиком, не MOEX."""
+    kw = N.build_keywords([NS(ticker="FIVE", name="Корпоративный центр Пример"), NS(ticker="NORM", name="Норильский никель"),
+                           NS(ticker="MOEX", name="Мосбиржа")], {})
+    assert "Корпоративный" not in kw["FIVE"] and "Норильский никель" in kw["NORM"]
+    assert not N.refers("обзор фонда корпоративные облигации", kw["FIVE"])
+    assert N.refers("акции «норильский никель» выросли", kw["NORM"])
+    assert not N.refers("индекс мосбиржи опустился ниже 2300 пунктов", kw["MOEX"])
+    assert N.refers("на мосбирже появится фьючерс на индекс ключевой ставки", kw["MOEX"])
+
+
+def test_generic_name_head_takes_first_meaningful_word():
+    """Регресс: у «Группа компаний Самолет» ключом становилось «Группа компаний» — к бумаге привязалась заметка
+    про перестрахование («одна группа компаний — один пакет»)."""
+    kw = N.build_keywords([NS(ticker="SMLT", name="Группа компаний Самолет"), NS(ticker="BSPB", name="Банк Санкт-Петербург"),
+                           NS(ticker="IRAO", name="Интер РАО ЕЭС")], {})
+    assert "Группа компаний Самолет" in kw["SMLT"] and "Группа компаний" not in kw["SMLT"]
+    assert "Банк Санкт" in kw["BSPB"] and "Интер РАО" in kw["IRAO"]
+    assert not N.refers("покрытие по принципу «одна группа компаний — один базовый пакет»", kw["SMLT"])
+
+
+def test_gmkn_found_by_short_name_and_cases():
+    """Регресс: у GMKN не было алиасов — новости про «Норникель» к бумаге не привязывались, а из названия
+    «Норильский никель» косвенный падеж («Норильского никеля») не находился."""
+    kw = N.build_keywords([NS(ticker="GMKN", name="Норильский никель")], N.DEFAULT_ALIASES)["GMKN"]
+    assert N.refers("акции «норникеля» стали аутсайдерами дня", kw)
+    assert N.refers("совет директоров «норильского никеля» рекомендовал выплату", kw)
+    assert N.refers("«норильский никель» отчитался за полугодие", kw)
+    assert not N.refers("в норильске похолодало", kw)
+
+
+def test_phrase_keys_across_quotes_and_hyphens():
+    """Регресс: ключ из нескольких слов не находился, если в тексте между словами кавычки или дефис —
+    «АФК «Система»», «Т-Технологии», «Банк «Санкт-Петербург»» к бумагам не привязывались."""
+    kw = N.build_keywords([NS(ticker="AFKS", name="АФК Система"), NS(ticker="BSPB", name="Банк Санкт-Петербург")], {})
+    assert N.refers("акции афк «система» выросли", kw["AFKS"])
+    assert N.refers("банк «санкт-петербург» выплатит дивиденды", kw["BSPB"])
+    assert N.mentions("«т-технологии» отчитались", "Т Технологии") and N.mentions("клиенты т-банка", "Т-Банк")
+    assert not N.refers("система быстрых платежей", kw["AFKS"])
+
+
+def test_brand_aliases_and_abbreviation_names():
+    """Регресс: бумаги, у которых в СМИ бренд или аббревиатура, а не название («ММК», «МКБ», «Россети»), не
+    находились; название-аббревиатура из трёх букв («ЛСР», «ТМК») отбрасывалось; у SBER не было алиасов SBERP —
+    «Сбербанк» не находился по ключу «Сбер»."""
+    pos = [NS(ticker="MAGN", name="Магнитогорский металлургический комбинат"), NS(ticker="SBER", name="Сбер Банк"),
+           NS(ticker="ABCD", name="АБВ")]
+    kw = N.build_keywords(pos, N.DEFAULT_ALIASES)
+    assert N.refers("ммк снизил выплаты", kw["MAGN"]) and N.refers("сбербанк запустил сервис", kw["SBER"])
+    assert kw["ABCD"] == ["ABCD", "АБВ"] and N.refers("группа «абв» отчиталась", kw["ABCD"])
+    assert not N.refers("пик продаж пришёлся на август", N.DEFAULT_ALIASES["PIKK"])

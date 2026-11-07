@@ -160,6 +160,13 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                                     "Проценты и названия остаются.")
         self.act_privacy.toggled.connect(self.set_privacy)
 
+        # выгрузка для анализа крупной моделью: отчёт + история, риск, выплаты, план, макро, кандидаты, новости
+        self.act_ai_export = QAction("Экспорт для ИИ-анализа…", self)
+        self.act_ai_export.setIconText("Для ИИ")                      # в панели инструментов — коротко
+        self.act_ai_export.setShortcut(QKeySequence("Ctrl+Shift+E"))
+        self.act_ai_export.setToolTip(f"Экспорт портфеля одним Markdown-документом для анализа крупной моделью "
+                                      f"(ChatGPT, Claude…): правила, история, риск, выплаты, новости ({native_keys('Ctrl+Shift+E')})")
+        self.act_ai_export.triggered.connect(self.open_ai_export)
         act_open = QAction("Открыть снапшот…", self); act_open.setShortcut(QKeySequence.Open)
         act_open.triggered.connect(self.open_snapshot)
         act_save = QAction("Сохранить снапшот…", self); act_save.setShortcut(QKeySequence.Save)
@@ -183,6 +190,7 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         m_file.addAction(act_open); m_file.addAction(act_save)
         act_exp = QAction("Экспорт истории стоимости (CSV)…", self); act_exp.triggered.connect(lambda: self.export_history())
         m_file.addAction(act_exp)
+        m_file.addAction(self.act_ai_export)
         m_file.addSeparator(); m_file.addAction(self.act_prefs)
         m_file.addSeparator(); m_file.addAction(act_quit)
 
@@ -224,6 +232,13 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
             a.triggered.connect(lambda _=False, i=i: self.tabs.setCurrentIndex(i))
             self.m_view.addAction(a); self.screen_actions.append(a)
 
+    def open_ai_export(self) -> None:
+        if not self.positions:
+            self.set_status("Экспорт для ИИ: сначала должен загрузиться портфель.")
+            return
+        import ai_export
+        self.ai_export_win = ai_export.open_dialog(self)
+
     def open_app_about(self) -> None:
         if getattr(self, "app_about", None) is None:
             self.app_about = DIAG.AppAboutDialog(self.open_about, self)
@@ -253,6 +268,8 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
         tb.addAction(self.act_setup)
         tb.addAction(self.act_refresh)
         tb.addAction(self.act_privacy)
+        self.act_ai_export.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        tb.addAction(self.act_ai_export)
         # общий индикатор обмена по сети: крутится, пока идёт загрузка или ждём ИИ; клик — окно с шагами
         self.act_log = activity.get()
         self.btn_activity = activity.ActivityButton(self.act_log, self)

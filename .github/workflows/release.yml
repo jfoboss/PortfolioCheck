@@ -1,5 +1,6 @@
 # Релиз: при публикации релиза собирает Windows-zip, macOS-dmg и Linux-tar.gz и прикладывает их к релизу.
-# Как выпустить: GitHub → Releases → Draft a new release → тег, например v1.2 (на main) → Publish.
+# Как выпустить: подними APP_VERSION в src/diagnostics.py (и смёржи в main), затем GitHub → Releases → Draft a new
+# release → тег vX.Y с той же версией (на main) → Publish. Тег и APP_VERSION не совпали — релиз остановится сразу.
 # Через ~5–10 минут в релизе появятся PortfolioCheck-windows.zip, PortfolioCheck-<версия>.dmg и
 # PortfolioCheck-linux-x86_64.tar.gz.
 # Подписи кода нет: Windows — «Неизвестный издатель», macOS — первый запуск правым кликом → «Открыть».
@@ -18,7 +19,27 @@ permissions:
   contents: write
 
 jobs:
+  # Тег релиза должен совпадать с версией программы (diagnostics.APP_VERSION): она идёт в имя dmg, в Info.plist и в
+  # «О программе». Релиз v1.6 вышел с APP_VERSION = "1.5" — внутри программа называла себя 1.5. Не совпало — стоп.
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+      - name: Тег совпадает с APP_VERSION
+        env:
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+        run: |
+          app=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' src/diagnostics.py)
+          echo "тег: $TAG, APP_VERSION: $app"
+          if [ "${TAG#v}" != "$app" ]; then
+            echo "::error::Тег $TAG не совпадает с APP_VERSION = \"$app\" в src/diagnostics.py — подними версию и выпусти заново"
+            exit 1
+          fi
+
   windows:
+    needs: version
     runs-on: windows-latest
     env:
       PYTHONUTF8: "1"
@@ -39,6 +60,7 @@ jobs:
           path: dist/PortfolioCheck-windows.zip
 
   macos:
+    needs: version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +75,7 @@ jobs:
           path: dist/*.dmg
 
   linux:
+    needs: version
     runs-on: ubuntu-22.04          # старее glibc — сборка запустится на большем числе дистрибутивов
     env:
       QT_QPA_PLATFORM: offscreen

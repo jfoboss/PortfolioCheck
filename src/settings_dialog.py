@@ -1086,7 +1086,7 @@ class SettingsDialog(QDialog):
         import paths
         if not hasattr(self, "lbl_ai_test"):
             return
-        r = AI.last_check(self.ai_provider_key(), self.ai_model.text().strip(), paths.cache_dir())
+        r = AI.last_check(self.ai_provider_key(), self.ai_model.text().strip(), paths.ai_dir())
         self.lbl_ai_test.setText(AI.describe_check(r) if r else "")
 
     def _ai_tier_info(self) -> None:
@@ -1160,7 +1160,7 @@ class SettingsDialog(QDialog):
         self.lbl_ai_test.setText("Проверяю модель (один запрос)…"); self.b_ai_test.setEnabled(False)
         import ai as AI
         conf = AI.AIConfig(p, key, self.ai_model.text().strip(), self.ai_proxy.text().strip(), self.ai_url.text().strip())
-        self._check_worker = CheckWorker(conf, paths.cache_dir(), self)
+        self._check_worker = CheckWorker(conf, paths.ai_dir(), self)
 
         def done(r):
             import ai as AI

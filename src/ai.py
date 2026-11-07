@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -154,7 +155,8 @@ def _openai_headers(provider: str, key: str) -> dict:
     return h
 
 
-CATALOG_DIR: Path | None = None     # задаёт приложение: где лежит кэш каталога OpenRouter
+CATALOG_DIR: Path | None = None     # задаёт приложение: где лежит кэш каталога OpenRouter (локальный кэш)
+AI_DIR: Path | None = None          # задаёт приложение: state/ai/ в папке данных — блокировка дневного лимита и т.п.
 
 
 def _cached_catalog() -> list[dict]:
@@ -382,8 +384,8 @@ class RateLimited(RuntimeError):
 
 
 # После дневного лимита бесплатных моделей не отправляем запросы до сброса — иначе каждый вызов впустую жжёт время.
-# Хранится и на диске (cache/ai_rate_block.json рядом с каталогом): иначе после перезапуска приложение ещё раз
-# упиралось в лимит, прежде чем узнать о нём.
+# Хранится и на диске (state/ai/ai_rate_block.json — общий для всех Mac через iCloud): иначе после перезапуска
+# приложение ещё раз упиралось в лимит, прежде чем узнать о нём.
 RATE_BLOCK_UNTIL: datetime | None = None
 RATE_BLOCK_FILE = "ai_rate_block.json"
 
@@ -391,10 +393,10 @@ RATE_BLOCK_FILE = "ai_rate_block.json"
 def set_rate_block(until: datetime) -> None:
     global RATE_BLOCK_UNTIL
     RATE_BLOCK_UNTIL = until
-    if CATALOG_DIR is None:
+    if AI_DIR is None:
         return
     try:
-        (CATALOG_DIR / RATE_BLOCK_FILE).write_text(json.dumps({"until": until.isoformat()}), encoding="utf-8")
+        JC.write(AI_DIR / RATE_BLOCK_FILE, {"until": until.isoformat()})
     except OSError as e:
         log.warning("не удалось сохранить блокировку лимита: %s", e)
 
@@ -407,10 +409,10 @@ def rate_block_until() -> datetime | None:
 def load_rate_block() -> datetime | None:
     """При старте: восстановить блокировку из файла, если сброс ещё не наступил. Возвращает её или None."""
     global RATE_BLOCK_UNTIL
-    if CATALOG_DIR is None:
+    if AI_DIR is None:
         return None
     try:
-        until = datetime.fromisoformat(json.loads((CATALOG_DIR / RATE_BLOCK_FILE).read_text(encoding="utf-8"))["until"])
+        until = datetime.fromisoformat(json.loads((AI_DIR / RATE_BLOCK_FILE).read_text(encoding="utf-8"))["until"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
     if until > datetime.now() and (RATE_BLOCK_UNTIL is None or until > RATE_BLOCK_UNTIL):
@@ -628,22 +630,46 @@ def _fingerprint(*parts: str) -> str:
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
-class ResponseCache:
-    """cache/ai_responses.json: {key: {"at": iso, "fp": hash, "data": {...}, "structural": hash}}. Один файл на все виды сводок."""
+_RESP_LOCK = threading.Lock()
 
-    def __init__(self, cache_dir: Path):
-        self.path = cache_dir / "ai_responses.json"
-        try:
-            self.data = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
-        except Exception:  # noqa: BLE001
-            self.data = {}
+
+def _resp_file(ai_dir: Path, key: str) -> Path:
+    return ai_dir / f"resp_{re.sub(r'[^A-Za-z0-9_-]', '_', key)}.json"
+
+
+def split_responses(old_file: Path, ai_dir: Path) -> None:
+    """Переезд: старый общий ai_responses.json → по файлу на ключ (свежий по «at» побеждает уже лежащий)."""
+    for key, e in (JC.read(old_file, {}) or {}).items():
+        f = _resp_file(ai_dir, key)
+        cur = JC.read(f)
+        if not cur or str(cur.get("at", "")) < str(e.get("at", "")):
+            JC.write(f, e)
+
+
+class ResponseCache:
+    """state/ai/resp_<ключ>.json: {"at": iso, "fp": hash, "data": {...}, "structural": hash} — по файлу на вид сводки.
+    Раньше — один общий ai_responses.json: две сводки, закончившиеся одновременно, затирали друг друга (каждая
+    перезаписывала файл целиком со своей копией), и на двух Mac через iCloud конфликтовал весь файл сразу."""
+
+    def __init__(self, ai_dir: Path):
+        self.dir = ai_dir
+
+    @property
+    def data(self) -> dict:
+        """Все записи (для отладки и тестов)."""
+        out = {}
+        for f in self.dir.glob("resp_*.json"):
+            e = JC.read(f)
+            if isinstance(e, dict):
+                out[f.stem[5:]] = e
+        return out
 
     def get(self, key: str, fp: str, min_interval_h: float, force: bool = False, structural: str = "") -> tuple[dict | None, str]:
         """(данные, причина). Кэш отдаётся, если отпечаток совпал или ещё не прошёл интервал.
         force — игнорировать интервал. structural — отпечаток состава запроса (набор бумаг): если он изменился,
         интервал не держит: в прошлой сводке этих бумаг просто не было."""
-        e = self.data.get(key)
-        if not e:
+        e = JC.read(_resp_file(self.dir, key))
+        if not isinstance(e, dict) or not e:
             return None, "нет в кэше"
         if e.get("fp") == fp:
             return e["data"], "данные не изменились"
@@ -660,8 +686,9 @@ class ResponseCache:
         return None, "устарело"
 
     def put(self, key: str, fp: str, data: dict, structural: str = "") -> None:
-        self.data[key] = {"at": datetime.now().isoformat(timespec="minutes"), "fp": fp, "data": data, "structural": structural}
-        JC.write(self.path, self.data)
+        e = {"at": datetime.now().isoformat(timespec="minutes"), "fp": fp, "data": data, "structural": structural}
+        with _RESP_LOCK:
+            JC.write(_resp_file(self.dir, key), e)
 
 
 def subjects_fingerprint(positions, candidates=None) -> str:

@@ -1,11 +1,20 @@
 """
-paths.py — где лежат данные приложения (config.yaml, ca-bundle.pem, snapshots/).
+paths.py — где лежат данные приложения (config.yaml, ca-bundle.pem, snapshots/, state/) и локальный кэш.
 
 По умолчанию — iCloud Drive/PortfolioCheck, если iCloud Drive на этом Mac включён: тогда настройки,
 классификация, эталоны и снапшоты общие для всех твоих Mac без дополнительного софта.
 Иначе — ~/Library/Application Support/PortfolioCheck. Выбор можно поменять в Настройки → Общие
 (iCloud / локально / любая папка — Dropbox, MEGAsync и т.п.). Указатель на выбранную папку хранится
 локально в storage.json. Токен API в общую папку не попадает — только Keychain этого Mac.
+
+Кэш делится по цене потери:
+  • state/ — в папке данных (iCloud): то, что дорого или нельзя восстановить — ответы ИИ (лимит 50 запросов в сутки
+    у бесплатных моделей), блокировка дневного лимита, проверки моделей, состояние оповещений, история времени
+    загрузок. Маленькие файлы, пишутся несколько раз в день — синхронизация почти ничего не стоит; ИИ-сводки
+    переживают переустановку и второй Mac.
+  • cache_dir() — локальная папка кэша ОС: свечи, скринер, выплаты, новости, календари — мегабайты, перезаписываются
+    при каждом обновлении, восстанавливаются за одно обновление (T-Invest и сайты без дневного лимита). Раньше лежали
+    в iCloud: каждое обновление гоняло их в облако, на втором Mac — конфликтные копии, выгруженный файл — ожидание.
 """
 
 from __future__ import annotations
@@ -34,6 +43,20 @@ ICLOUD_ROOT = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDoc
 ICLOUD_DIR = ICLOUD_ROOT / APP_NAME
 POINTER = LOCAL_DIR / "storage.json"
 DATA_FILES = ("config.yaml", "ca-bundle.pem")
+# Из старого cache/ (в папке данных) — в state/: что дорого восстановить. ИИ — в state/ai/, остальное — в state/.
+STATE_AI_FILES = ("ai_responses.json", "ai_summary.json", "ai_model_checks.json", "ai_rate_block.json")
+STATE_FILES = ("alerts_state.json", "activity_times.json")
+
+
+def _os_cache_root() -> Path:
+    """Папка кэша ОС: macOS — ~/Library/Caches, Windows — %LOCALAPPDATA%, Linux — $XDG_CACHE_HOME (~/.cache)."""
+    import os
+    import sys
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Caches" / APP_NAME
+    if sys.platform.startswith("win"):
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME / "Cache"
+    return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / APP_NAME
 
 
 def icloud_available() -> bool:
@@ -95,8 +118,62 @@ def data_dir() -> Path:
 
 
 def cache_dir() -> Path:
-    """Кэши (свечи, новости, скринер, сводки ИИ, календари) — внутри папки данных, переезжают вместе с ней."""
-    return data_dir() / "cache"
+    """Локальный кэш (свечи, новости, скринер, выплаты, календари) — не в iCloud: пересчитывается за одно обновление.
+    В демо — во временной папке демо."""
+    d = (DEMO_DIR / "cache") if DEMO_DIR is not None else _os_cache_root()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def state_dir() -> Path:
+    """Дорогое в восстановлении (ИИ, оповещения, история времени) — в папке данных, синхронизируется с ней."""
+    d = data_dir() / "state"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def ai_dir() -> Path:
+    """Ответы и сводки ИИ — по файлу на ключ: меньше конфликтов iCloud, когда программа открыта на двух Mac."""
+    d = state_dir() / "ai"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _newer_wins(src: Path, dst: Path) -> None:
+    """Перенести src → dst; если dst уже есть — оставить более свежий по времени изменения."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
+        src.unlink()
+    else:
+        shutil.move(str(src), str(dst))
+
+
+def migrate_old_cache(data: Path, cache: Path, split_responses=None) -> dict:
+    """Разовый переезд старого data/cache/: дорогое — в data/state/ (ИИ — в state/ai/), остальное — в локальный кэш.
+    Файлы переносятся, а не удаляются: ни одна ИИ-сводка не теряется, свечи не качаются заново.
+    split_responses(path, ai_dir) — разложить старый общий ai_responses.json по ключам (делает ai.py).
+    Возвращает {"state": n, "cache": n} — сколько файлов куда ушло."""
+    old = data / "cache"
+    moved = {"state": 0, "cache": 0}
+    if not old.is_dir() or old == cache:
+        return moved
+    ai, st = data / "state" / "ai", data / "state"
+    for f in sorted(old.iterdir()):
+        if not f.is_file() or f.name.endswith(".tmp"):
+            continue
+        if f.name == "ai_responses.json" and split_responses is not None:
+            split_responses(f, ai); f.unlink(missing_ok=True); moved["state"] += 1
+        elif f.name in STATE_AI_FILES or (f.name.startswith("exec_") and f.suffix == ".json"):
+            _newer_wins(f, ai / f.name); moved["state"] += 1
+        elif f.name in STATE_FILES:
+            _newer_wins(f, st / f.name); moved["state"] += 1
+        else:
+            _newer_wins(f, cache / f.name); moved["cache"] += 1
+    try:
+        old.rmdir()                                      # пустой — убираем; остались чужие файлы — пусть лежат
+    except OSError:
+        pass
+    return moved
 
 
 def set_data_dir(new_dir: Path, move_files: bool = True) -> Path:
@@ -133,6 +210,14 @@ def _migrate(src: Path, dst: Path, move: bool) -> None:
         s, t = src / name, dst / name
         if s.exists() and not t.exists():
             shutil.copy2(s, t)
+    # state/ (ИИ, оповещения, история времени) — переезжает вместе с папкой данных, иначе ИИ-сводки потеряются
+    sst = src / "state"
+    if sst.is_dir():
+        for f in sst.rglob("*.json"):
+            t = dst / "state" / f.relative_to(sst)
+            if not t.exists():
+                t.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, t)
     ss, ds = src / "snapshots", dst / "snapshots"
     if ss.is_dir():
         ds.mkdir(exist_ok=True)

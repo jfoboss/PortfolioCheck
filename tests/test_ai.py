@@ -22,6 +22,7 @@ def catalog(isolated_home, monkeypatch):
                      {"id": "img/flux", "pricing": {}, "architecture": {"output_modalities": ["image"]}}]}
     (d / "openrouter_models.json").write_text(json.dumps({"at": datetime.now().isoformat(), "data": data}))
     monkeypatch.setattr(ai, "CATALOG_DIR", d)
+    monkeypatch.setattr(ai, "AI_DIR", d)
     monkeypatch.setattr(ai, "RATE_BLOCK_UNTIL", None)
     return d
 
@@ -99,7 +100,8 @@ def test_cache_structural_change_breaks_interval(tmp_path):
     c.put("news", "fp1", {"x": 1}, "subjA")
     assert c.get("news", "fp2", 6, False, "subjA")[0] is not None        # тот же состав — держим интервал
     assert c.get("news", "fp2", 6, False, "subjB")[0] is None            # новый состав — запрос
-    c.data["news"].pop("structural")                                     # кэш старой версии без поля
+    f = ai._resp_file(tmp_path, "news"); e = json.loads(f.read_text()); e.pop("structural")
+    f.write_text(json.dumps(e))                                          # кэш старой версии без поля
     assert c.get("news", "fp2", 6, False, "subjA")[0] is None
 
 

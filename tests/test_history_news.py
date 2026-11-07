@@ -64,12 +64,16 @@ def test_fetch_news_matches_dedups_sorts_and_reports_failed(monkeypatch):
     повтор с браузерными заголовками на 403."""
     import urllib.error
     import urllib.request
+    from datetime import datetime, timezone
+    from email.utils import format_datetime
+    base = datetime.now(timezone.utc) - timedelta(hours=6)       # даты — от «сейчас»: в ленте новости не старше недели
+
+    def at(minutes):
+        return format_datetime(base + timedelta(minutes=minutes))
     feeds = {
-        "https://a.example/rss": _rss(("Сбербанк отчитался за квартал", "Fri, 19 Sep 2026 10:00:00 +0300"),
-                                      ("Погода в Москве", "Fri, 19 Sep 2026 11:00:00 +0300")),
-        "https://b.example/rss": _rss(("Сбербанк отчитался за квартал", "Fri, 19 Sep 2026 10:05:00 +0300"),
-                                      ("МТС запускает новый тариф", "Fri, 19 Sep 2026 12:00:00 +0300")),
-        "https://blocked.example/rss": _rss(("Фосагро увеличила экспорт", "Fri, 19 Sep 2026 09:00:00 +0300")),
+        "https://a.example/rss": _rss(("Сбербанк отчитался за квартал", at(60)), ("Погода в Москве", at(120))),
+        "https://b.example/rss": _rss(("Сбербанк отчитался за квартал", at(65)), ("МТС запускает новый тариф", at(180))),
+        "https://blocked.example/rss": _rss(("Фосагро увеличила экспорт", at(0))),
     }
     seen = []
 

@@ -116,8 +116,13 @@ class MainWindow(HistoryMixin, NewsMixin, ExecSummaryMixin, IdeasMixin, PrivacyM
                 "(или перезапустить приложение).",
                 "Открыть настройки доступа" if IS_MAC else "",
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" if IS_MAC else "", retry=True)
+        # разовый переезд старого cache/ из папки данных (iCloud): ИИ и состояние — в state/, остальное — локально
+        moved = paths.migrate_old_cache(paths.data_dir(), paths.cache_dir(), AI.split_responses)
+        if any(moved.values()):
+            log.info("кэш разложен: в state/ (папка данных) — %d файлов, в локальный кэш — %d", moved["state"], moved["cache"])
         AI.CATALOG_DIR = paths.cache_dir()   # модель по умолчанию для OpenRouter — из живого каталога
-        self.act_log.set_store(paths.cache_dir() / activity.TIMES_FILE)   # сколько обычно длятся загрузки
+        AI.AI_DIR = paths.ai_dir()           # дневная блокировка лимита — общая для всех Mac
+        self.act_log.set_store(paths.state_dir() / activity.TIMES_FILE)   # сколько обычно длятся загрузки
         AI.load_rate_block()                           # дневной лимит, пойманный до перезапуска, ещё действует
         self.restore_layout()                      # размер окна, положение разделителей, активный экран
         if self.needs_setup():

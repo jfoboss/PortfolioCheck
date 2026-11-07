@@ -24,6 +24,10 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "LOCAL_DIR", local)
     monkeypatch.setattr(paths, "POINTER", local / "storage.json")
     monkeypatch.setattr(paths, "data_dir", lambda: tmp_path / "data", raising=False)
+    # локальный кэш ОС — тоже во временном каталоге (в тестах — рядом с папкой данных, как было до разделения)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / ".cache"))
+    monkeypatch.setattr(paths, "cache_dir", lambda: tmp_path / "data" / "cache", raising=False)
     # настоящие хранилища секретов (Keychain, Credential Manager, Secret Service) тесты не трогают — только файл
     import secrets_store as SEC
     monkeypatch.setattr(SEC, "_wincred", lambda: None)

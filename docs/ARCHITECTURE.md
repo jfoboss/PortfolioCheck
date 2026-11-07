@@ -28,7 +28,7 @@ app.py  ── каркас главного окна: сборка UI, меню
   consensus.py        ── консенсус-прогнозы аналитиков (GetForecastBy), кэш forecast_<uid>.json на сутки
   scenarios.py        ── сценарии: двухфакторные беты (индекс, доллар) и оценка изменения стоимости
   factors.py          ── ряды факторов: IMOEX (MOEX ISS) и USD/RUB (T-Invest, запасной — ЦБ), кэш candles_IMOEX / candles_USDRUB
-  alerts.py           ── оповещения-условия: проверка после обновлений, однократность (cache/alerts_state.json)
+  alerts.py           ── оповещения-условия: проверка после обновлений, однократность (state/alerts_state.json)
   risk.py             ── риск по свечам: волатильность, просадка, эффективное N, вклад в риск, корреляции
   export.py           ── CSV под русский Excel: таблицы окна и история стоимости
   attribution.py      ── откуда изменение стоимости: переоценка / покупки нетто между снапшотами
@@ -74,25 +74,30 @@ app.py  ── каркас главного окна: сборка UI, меню
 Windows `%APPDATA%\PortfolioCheck\`, Linux `$XDG_DATA_HOME/PortfolioCheck/` (обычно `~/.local/share`). Вместо неё
 можно выбрать iCloud Drive (только macOS) или любую папку; выбор — в `storage.json` локальной папки.
 
+Пути `state/…` — в папке данных (синхронизируются с iCloud / своей папкой: дорого восстановить), `cache/…` — в
+локальной папке кэша ОС (`paths.cache_dir()`: `~/Library/Caches/PortfolioCheck`, `%LOCALAPPDATA%\PortfolioCheck\Cache`,
+`~/.cache/PortfolioCheck`; в демо — во временной папке). Старый `cache/` в папке данных раскладывается при старте
+`paths.migrate_old_cache` (перенос, не удаление; при совпадении — свежий по времени).
+
 | путь | что | кто пишет |
 |---|---|---|
 | `config.yaml` | стратегия, классы, правила, настройки, параметры прогноза | настройки, мастер, импорт |
 | `config.yaml.v<N>.bak` | копия конфига версии N перед миграцией | `config_migrate.load_and_migrate` |
 | `snapshots/YYYY-MM-DD.json` | позиции на дату (история стоимости) | `on_loaded` |
 | `cache/candles_<figi или uid>.json` | дневные свечи `[(дата, close)]`, до 6 лет (`KEEP_DAYS`); `load_cached` по умолчанию отдаёт ~400 дней | `history.fetch_candles` |
-| `cache/activity_times.json` | `{вид задачи: {title, runs: [секунды]}}` — последние 10 удачных запусков, для примерного прогресса в окне «Сеть» | `activity.Activity.finish` |
+| `state/activity_times.json` | `{вид задачи: {title, runs: [секунды]}}` — последние 10 удачных запусков, для примерного прогресса в окне «Сеть» | `activity.Activity.finish` |
 | `cache/candles_depth.json` | `{ключ: дата}` — с какой даты уже спрашивали свечи (у молодой бумаги раньше данных нет — не спрашивать снова) | `history.fetch_candles` |
 | `cache/news.json` | лента | `news.save_cache` |
-| `cache/alerts_state.json` | какие условия оповещений выполнены сейчас (чтобы не повторять) | `alerts.new_hits` |
+| `state/alerts_state.json` | какие условия оповещений выполнены сейчас (чтобы не повторять) | `alerts.new_hits` |
 | `cache/candles_IMOEX.json`, `cache/candles_USDRUB.json` | ряды факторов для сценариев (раз в сутки) | `factors.fetch_all` |
 | `cache/macro_calendar.json` | календарь ЦБ по ключевой ставке (раз в неделю, вместе с факторами) | `macro.fetch_calendar` |
 | `cache/payouts.json` | выплаты для календаря (прошлые, объявленные, ожидаемые) | `payouts.save` |
 | `cache/candidate_payouts.json` | ближайшие выплаты кандидатов скринера (GetDividends при догрузке кандидатов) | `payouts.save_candidates` |
 | `cache/screener.json` | результат скринера (`source: tinvest2`) | `screener.screen` |
-| `cache/ai_responses.json` | кэш ответов ИИ с отпечатками | `ai.ResponseCache` |
-| `cache/ai_summary.json`, `cache/exec_<экран>.json` | последние сводки для мгновенного показа | `ai.save_*` |
-| `cache/ai_rate_block.json` | до какого времени не слать запросы к `:free` (дневной лимит) | `ai.set_rate_block` |
-| `cache/ai_model_checks.json` | результаты кнопки «Проверить» по моделям | `ai.check_model` |
+| `state/ai/resp_<ключ>.json` | ответы ИИ с отпечатками — по файлу на вид сводки (раньше общий `ai_responses.json`: одновременные сводки затирали друг друга) | `ai.ResponseCache` |
+| `state/ai/ai_summary.json`, `state/ai/exec_<экран>.json` | последние сводки для мгновенного показа | `ai.save_*` |
+| `state/ai/ai_rate_block.json` | до какого времени не слать запросы к `:free` (дневной лимит) | `ai.set_rate_block` |
+| `state/ai/ai_model_checks.json` | результаты кнопки «Проверить» по моделям | `ai.check_model` |
 | `cache/openrouter_models.json` | каталог моделей OpenRouter (сутки) | `ai.fetch_openrouter_models` |
 | `logs/` | лог приложения | `diagnostics.setup_logging` |
 | `ca-bundle.pem` | корни для gRPC (grpcio + Минцифры) | Настройки → Доступ → «Собрать бандл» (`settings_dialog.build_ca_bundle`) |

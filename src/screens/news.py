@@ -152,7 +152,7 @@ class NewsMixin:
             p.spinner.start("Модель читает новости — показана прошлая сводка")
         cands = (getattr(self, "_last_screen", None).ideas[:15] if getattr(self, "_last_screen", None) else [])
         self.ai_worker = activity.get().track(
-            AIWorker(conf, items, self.positions, paths.cache_dir(), manual, cands, cache_only=cache_only),
+            AIWorker(conf, items, self.positions, paths.ai_dir(), manual, cands, cache_only=cache_only),
             "ai_news", "ИИ-сводка по новостям", done_note=lambda r: r[1] or f"ответила {r[0].model}")
         self.ai_worker.done.connect(self._on_ai)
         self.ai_worker.skipped.connect(self._on_ai_skipped)
@@ -178,7 +178,7 @@ class NewsMixin:
         self.btn_ai.setEnabled(True)
         for p in (self.ai_panel, self.ai_small):
             p.spinner.stop()
-        old = getattr(self, "ai_summary", None) or AI.load_summary(paths.cache_dir())
+        old = getattr(self, "ai_summary", None) or AI.load_summary(paths.ai_dir())
         shown = (f" — показана прошлая сводка ({old.model}, {old.at.replace('T', ' ')})" if old is not None
                  else "")
         self.set_status(f"ИИ-сводка ({model}) не удалась: {msg[:160]}{shown}")
@@ -197,7 +197,7 @@ class NewsMixin:
         for p in (self.ai_panel, self.ai_small):
             p.spinner.stop()
         self.ai_summary, self._ai_note = summary, note
-        AI.save_summary(summary, paths.cache_dir())
+        AI.save_summary(summary, paths.ai_dir())
         log.info("ИИ-сводка: %s/%s, бумаг %d, %s", summary.provider, summary.model, len(summary.items), note or "свежий запрос")
         self.set_status(f"ИИ-сводка {'из кэша' if note else 'готова'} ({summary.provider}).")
         self.render_ai()
@@ -213,7 +213,7 @@ class NewsMixin:
         self._run_ai_pending()
 
     def render_ai(self) -> None:
-        s = getattr(self, "ai_summary", None) or AI.load_summary(paths.cache_dir())
+        s = getattr(self, "ai_summary", None) or AI.load_summary(paths.ai_dir())
         if s is None:
             txt = "ИИ-сводка появится после загрузки новостей (Настройки → ИИ: провайдер и ключ)."
             self.ai_panel.setPlainText(txt); self.ai_small.setPlainText(txt); return

@@ -117,7 +117,7 @@ class ExecSummaryMixin:
         for kind, _ in jobs:
             self.exec_panels[kind].spinner.start("Модель готовит сводку — показана прошлая")
         self.set_status(f"ИИ-сводки по экранам ({conf.provider})… показаны прошлые")
-        self.exec_worker = activity.get().track(ExecWorker(conf, jobs, paths.cache_dir(), manual), "ai_exec",
+        self.exec_worker = activity.get().track(ExecWorker(conf, jobs, paths.ai_dir(), manual), "ai_exec",
                                                 f"ИИ-сводки по экранам ({len(jobs)})")
         self.exec_worker.one.connect(self._on_exec_one)
         self.exec_worker.failed.connect(lambda m: (log.error("ИИ-сводка экрана: %s", m), self.set_status(f"ИИ-сводка: {m[:120]}"),
@@ -129,7 +129,7 @@ class ExecSummaryMixin:
     def _on_exec_one(self, result) -> None:
         s, note = result if isinstance(result, tuple) else (result, "")
         self.exec_panels[s.kind].spinner.stop()
-        AI.save_exec(s, paths.cache_dir())
+        AI.save_exec(s, paths.ai_dir())
         self.exec_panels[s.kind].setHtml(AI.render_exec_html(s, mask_text if self.privacy else None, note))
 
     def ai_enabled(self) -> bool:
@@ -147,6 +147,6 @@ class ExecSummaryMixin:
 
     def render_exec_cached(self) -> None:
         for kind, panel in self.exec_panels.items():
-            s = AI.load_exec(kind, paths.cache_dir())
+            s = AI.load_exec(kind, paths.ai_dir())
             if s:
                 panel.setHtml(AI.render_exec_html(s, mask_text if self.privacy else None))

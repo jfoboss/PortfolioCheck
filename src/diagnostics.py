@@ -20,7 +20,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBu
 from widgets import is_running, stop_workers
 import style as SY
 
-APP_VERSION = "1.5"
+APP_VERSION = "1.7"
 REPO_URL = "https://github.com/jfoboss/PortfolioCheck"
 ABOUT_TEXT = (
     "Настольное приложение для macOS, Windows и Linux: сверяет портфель в Т-Инвестициях с твоими правилами — "

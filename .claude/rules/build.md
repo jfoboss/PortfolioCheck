@@ -31,4 +31,5 @@ paths:
 - **CI** (`.github/workflows/ci.yml`): тесты на трёх ОС, `check_private.sh`, сборки macOS / Windows / Linux и запуск
   собранной программы с `--demo`. Linux собирается на ubuntu-22.04 — старее glibc, шире совместимость.
 - **Релиз** (`release.yml`): Releases → Publish с тегом `vX.Y` → dmg, zip и tar.gz прикладываются сами.
-  Версия — `diagnostics.APP_VERSION`.
+  Версия — `diagnostics.APP_VERSION`: подними её до выпуска; тег `vX.Y` обязан совпадать с ней — задание `version`
+  в `release.yml` иначе остановит релиз (v1.6 вышел с `APP_VERSION = "1.5"`).

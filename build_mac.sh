@@ -33,6 +33,7 @@ pyinstaller --noconfirm --windowed --name PortfolioCheck \
   --hidden-import settings_dialog \
   --hidden-import forecast \
   --hidden-import activity \
+  --hidden-import ai_export \
   --hidden-import charts \
   --hidden-import macro \
   --hidden-import paths \
